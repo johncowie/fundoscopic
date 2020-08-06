@@ -9,14 +9,14 @@ import Effect (Effect)
 import Effect.Aff (Aff, launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Console as Console
-import JohnCowie.HTTPure (serve', BasicRequest, Response, response)
+import Fundoscopic.Handlers as H
+import Fundoscopic.Routing as R
+import JohnCowie.Data.Lens as L
+import JohnCowie.HTTPure (class IsRequest, BasicRequest, Response, _path, serve')
 
 data Mode = Dev
 instance showMode :: Show Mode where
   show Dev = "Dev"
-
-app :: BasicRequest Unit -> Aff (Response String)
-app r = pure $ response 200 "helloWorld"
 
 logError :: Aff (Either String Unit) -> Aff Unit
 logError eM = do
@@ -25,6 +25,15 @@ logError eM = do
     (Left err) -> liftEffect (Console.error err)
     _ -> pure unit
 
+lookupHandler :: R.HandlerId -> BasicRequest Unit -> Aff (Response String)
+lookupHandler R.HelloWorld = H.helloWorld
+lookupHandler R.NotFound = H.notFound
+
+app :: forall req res. (IsRequest req) => (R.HandlerId -> req Unit -> res) -> req Unit -> res
+app handlerLookup req = (handlerLookup handlerId) req
+  where handlerId = R.handlerIdForPath path
+        path = L.view _path req
+
 main :: Effect Unit
 main = launchAff_ $ logError $ runExceptT do
     let port = 9000
@@ -32,7 +41,7 @@ main = launchAff_ $ logError $ runExceptT do
         hostname = "0.0.0.0"
         mode = Dev
     void $ ExceptT $ liftEffect $ Right
-      <$> ( serve' { port, backlog, hostname } app do
+      <$> ( serve' { port, backlog, hostname } (app lookupHandler) do
             Console.log $ " ┌────────────────────────────────────────────┐"
             Console.log $ " │ Server now up on port " <> show port <> "                 │"
             Console.log $ " └────────────────────────────────────────────┘"
