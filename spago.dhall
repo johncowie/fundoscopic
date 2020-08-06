@@ -9,8 +9,10 @@ You can edit this file as you like.
   , "effect"
   , "httpure"
   , "johncowie-httpure"
+  , "node-process"
   , "prelude"
   , "psci-support"
+  , "record"
   , "smolder"
   ]
 , packages = ./packages.dhall
