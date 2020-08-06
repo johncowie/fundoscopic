@@ -25,7 +25,6 @@ import Effect.Console as Console
 type Env = Object String
 
 data Var t = Var { varName :: String
-                 , parser :: String -> Either String t
                  , description :: Maybe String
                  , default :: Maybe t
                  , showDefault :: t -> Maybe String
@@ -72,8 +71,8 @@ instance maybeShowShow :: Show t => MaybeShow t where
 else instance maybeShowOther :: MaybeShow a where
   maybeShow s = Nothing
 
-var :: forall t. (MaybeShow t) => (ParseValue t) => String -> Var t
-var varName = Var {varName, parser: parseValue, description: Nothing, default: Nothing, showDefault: maybeShow}
+var :: forall t. (MaybeShow t) => (ReadValue t) => String -> Var t
+var varName = Var {varName, description: Nothing, default: Nothing, showDefault: maybeShow}
 
 describe :: forall t. String -> Var t -> Var t
 describe desc (Var r) = Var $ r {description = Just desc}
@@ -85,21 +84,31 @@ varInfo :: forall t. Var t -> VarInfo
 varInfo (Var {varName, default, description, showDefault})
   = {varName, description, default: default >>= showDefault}
 
--- TODO support maybe (need another type class for this)
--- TODO add description to error?
-readValueFromEnv :: forall t. Var t -> Object String -> Either EnvError t
-readValueFromEnv v@(Var {varName, parser, default}) env = do
-  case lookup varName env of
-    (Just str) -> lmap (ParseError (varInfo v)) $ parser str
-    Nothing -> case default of
+class ReadValue t where
+  readValue :: VarInfo -> Maybe t -> Maybe String -> Either EnvError t
+
+instance readValueMaybe :: (ParseValue t) => ReadValue (Maybe t) where
+  readValue info default (Just str) = map Just $ lmap (ParseError info) $ parseValue str
+  readValue info default Nothing =
+    case default of
       (Just def) -> Right def
-      Nothing -> Left $ MissingError (varInfo v)
+      Nothing -> Right Nothing
+else instance readValueAll :: (ParseValue t) => ReadValue t where
+  readValue info default (Just str) = lmap (ParseError info) $ parseValue str
+  readValue info default Nothing =
+    case default of
+      (Just def) -> Right def
+      Nothing -> Left $ MissingError info
+
+readValueFromEnv :: forall t. (ReadValue t) => Var t -> Object String -> Either EnvError t
+readValueFromEnv v@(Var {varName, default}) env = readValue (varInfo v) default $ lookup varName env
 
 class Compiler (el :: RowList) (rl :: RowList) (e :: # Type) (r :: # Type) | el -> rl, e -> r where
   compileParser :: forall proxy. proxy el -> proxy rl -> (Record e) -> Object String -> Either EnvError (Record r)
 
 instance compilerCons ::
   ( IsSymbol l
+  , ReadValue t
   , Row.Lacks l rt
   , Row.Lacks l pt
   , ListToRow rlt rt
@@ -133,14 +142,14 @@ instance readEnvImpl ::
   ) => ReadEnv e r where
     readEnv = compileParser (RLProxy :: RLProxy el) (RLProxy :: RLProxy rl)
 
-exampleParser2 :: Object String -> Either EnvError {a :: Int, c :: Int, b :: String}
+exampleParser2 :: Object String -> Either EnvError {a :: Int, c :: Int, b :: String, d :: Maybe String}
 exampleParser2 = readEnv { a: var "BILL" # describe "Bill is an int" # defaultTo 7
                          , b: var "BEN" # describe "Ben is a string"
-                         , c: var "BOB_BOB" # describe "Bob bob is the feckin best" }
+                         , c: var "BOB_BOB" # describe "Bob bob is the feckin best"
+                         , d: var "MAYBE" # describe "Value is optional"}
 
 -- TODO function for merging parsers
 -- TODO how to document parsers?
--- TODO more specific error type with VAR info
 -- TODO can support nested?
 
 main :: Effect Unit
