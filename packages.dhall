@@ -123,6 +123,127 @@ let upstream =
 
 let overrides = {=}
 
-let additions = {=}
+let additions =
+      { postgresql-client =
+          { dependencies =
+            [ "bytestrings"
+            , "exceptions"
+            , "newtype"
+            , "effect"
+            , "console"
+            , "either"
+            , "foreign-generic"
+            , "arrays"
+            , "maybe"
+            , "argonaut"
+            , "foreign-object"
+            , "aff"
+            , "foldable-traversable"
+            , "prelude"
+            , "bifunctors"
+            , "assert"
+            , "test-unit"
+            , "transformers"
+            , "decimals"
+            , "js-date"
+            , "psci-support"
+            , "tuples"
+            , "foreign"
+            , "lists"
+            , "nullable"
+            ]
+          , repo =
+              "https://github.com/rightfold/purescript-postgresql-client.git"
+          , version = "v3.0.2"
+          }
+      , typedenv =
+          { dependencies =
+            [ "console"
+            , "effect"
+            , "foreign-object"
+            , "generics-rep"
+            , "integers"
+            , "node-process"
+            , "numbers"
+            , "psci-support"
+            , "record"
+            , "spec"
+            , "strings"
+            , "transformers"
+            , "typelevel-prelude"
+            ]
+          , repo = "https://github.com/johncowie/purescript-typedenv.git"
+          , version = "v0.0.3"
+          }
+      , johncowie-simple-lens =
+          { dependencies =
+            [ "maybe"
+            , "newtype"
+            , "ordered-collections"
+            , "prelude"
+            , "psci-support"
+            , "record"
+            ]
+          , repo = "https://github.com/johncowie/purescript-johncowie-simple-lens.git"
+          , version = "v0.0.1"
+          }
+      , johncowie-httpure =
+          { dependencies =
+            [ "argonaut"
+            , "console"
+            , "effect"
+            , "form-urlencoded"
+            , "httpure"
+            , "johncowie-simple-lens"
+            , "psci-support"
+            ]
+            , repo = "https://github.com/johncowie/purescript-johncowie-httpure.git"
+            , version = "v0.0.4"
+          }
+      , johncowie-jwt =
+          { dependencies = [ "argonaut", "b64", "console", "crypto", "effect", "psci-support" ]
+          , repo = "https://github.com/johncowie/purescript-johncowie-jwt.git"
+          , version = "v0.0.1"
+          }
+      , johncowie-oauth =
+          { dependencies =
+            [ "affjax"
+            , "console"
+            , "effect"
+            , "johncowie-httpure"
+            , "johncowie-jwt"
+            , "psci-support"
+            , "typedenv"
+            , "uri"
+            ]
+            , repo = "https://github.com/johncowie/purescript-johncowie-oauth.git"
+            , version = "v0.0.1"
+          }
+      , johncowie-bricker =
+          { dependencies =
+            [ "aff"
+            , "console"
+            , "crypto"
+            , "effect"
+            , "node-child-process"
+            , "node-fs"
+            , "node-process"
+            , "psci-support"
+            ]
+            , repo = "https://github.com/johncowie/purescript-johncowie-bricker.git"
+            , version = "v0.0.1"
+          }
+      , johncowie-postgres =
+          { dependencies =
+            [ "console"
+            , "effect"
+            , "parsing"
+            , "postgresql-client"
+            , "psci-support"
+            , "uri" ]
+            , repo = "https://github.com/johncowie/purescript-johncowie-postgres.git"
+            , version = "v0.0.1"
+          }
+      }
 
 in  upstream // overrides // additions
