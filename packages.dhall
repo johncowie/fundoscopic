@@ -156,25 +156,22 @@ let additions =
               "https://github.com/rightfold/purescript-postgresql-client.git"
           , version = "v3.0.2"
           }
-      , typedenv =
+      , envisage =
           { dependencies =
             [ "console"
             , "effect"
-            , "foreign-object"
-            , "generics-rep"
             , "integers"
             , "node-process"
             , "numbers"
+            , "prelude"
             , "psci-support"
             , "record"
-            , "spec"
             , "strings"
             , "transformers"
-            , "typelevel-prelude"
             ]
-          , repo = "https://github.com/johncowie/purescript-typedenv.git"
-          , version = "v0.0.3"
-          }
+          , repo = "https://github.com/johncowie/purescript-envisage.git"
+          , version = "v0.0.2"
+       }
       , johncowie-simple-lens =
           { dependencies =
             [ "maybe"
@@ -203,7 +200,7 @@ let additions =
       , johncowie-jwt =
           { dependencies = [ "argonaut", "b64", "console", "crypto", "effect", "psci-support" ]
           , repo = "https://github.com/johncowie/purescript-johncowie-jwt.git"
-          , version = "v0.0.1"
+          , version = "v0.0.2"
           }
       , johncowie-oauth =
           { dependencies =
@@ -213,11 +210,11 @@ let additions =
             , "johncowie-httpure"
             , "johncowie-jwt"
             , "psci-support"
-            , "typedenv"
+            , "envisage"
             , "uri"
             ]
             , repo = "https://github.com/johncowie/purescript-johncowie-oauth.git"
-            , version = "v0.0.1"
+            , version = "v0.0.4"
           }
       , johncowie-bricker =
           { dependencies =

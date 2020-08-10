@@ -28,6 +28,7 @@ logError eM = do
 lookupHandler :: R.HandlerId -> BasicRequest Unit -> Aff (Response String)
 lookupHandler R.HelloWorld = H.helloWorld
 lookupHandler R.NotFound = H.notFound
+lookupHandler R.Login = H.login
 
 app :: forall req res. (IsRequest req) => (R.HandlerId -> req Unit -> res) -> req Unit -> res
 app handlerLookup req = (handlerLookup handlerId) req
