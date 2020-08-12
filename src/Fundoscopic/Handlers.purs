@@ -27,10 +27,10 @@ helloWorld _ = pure $ htmlResponse 200 do
       H.div do
         H.h1 $ text "Hello Fundoscopic World!!!"
 
-login :: forall m . (Monad m) => BasicRequest Unit -> m (Response String)
-login _ = pure $ htmlResponse 200 do
+login :: forall m . (Monad m) => OAuth -> BasicRequest Unit -> m (Response String)
+login oauth _ = pure $ htmlResponse 200 do
   html do
     H.body do
       H.div do
         H.h1 $ text "Login"
-        H.a ! A.href "https://google.com" $ text "Login"
+        H.a ! A.href (oauth.redirect "http://example.com") $ text "Login"

@@ -170,52 +170,8 @@ let additions =
             , "transformers"
             ]
           , repo = "https://github.com/johncowie/purescript-envisage.git"
-          , version = "v0.0.2"
+          , version = "v0.0.4"
        }
-      , johncowie-simple-lens =
-          { dependencies =
-            [ "maybe"
-            , "newtype"
-            , "ordered-collections"
-            , "prelude"
-            , "psci-support"
-            , "record"
-            ]
-          , repo = "https://github.com/johncowie/purescript-johncowie-simple-lens.git"
-          , version = "v0.0.1"
-          }
-      , johncowie-httpure =
-          { dependencies =
-            [ "argonaut"
-            , "console"
-            , "effect"
-            , "form-urlencoded"
-            , "httpure"
-            , "johncowie-simple-lens"
-            , "psci-support"
-            ]
-            , repo = "https://github.com/johncowie/purescript-johncowie-httpure.git"
-            , version = "v0.0.4"
-          }
-      , johncowie-jwt =
-          { dependencies = [ "argonaut", "b64", "console", "crypto", "effect", "psci-support" ]
-          , repo = "https://github.com/johncowie/purescript-johncowie-jwt.git"
-          , version = "v0.0.2"
-          }
-      , johncowie-oauth =
-          { dependencies =
-            [ "affjax"
-            , "console"
-            , "effect"
-            , "johncowie-httpure"
-            , "johncowie-jwt"
-            , "psci-support"
-            , "envisage"
-            , "uri"
-            ]
-            , repo = "https://github.com/johncowie/purescript-johncowie-oauth.git"
-            , version = "v0.0.4"
-          }
       , johncowie-bricker =
           { dependencies =
             [ "aff"
@@ -230,15 +186,24 @@ let additions =
             , repo = "https://github.com/johncowie/purescript-johncowie-bricker.git"
             , version = "v0.0.1"
           }
-      , johncowie-postgres =
+      , johncowie-stuff =
           { dependencies =
-            [ "console"
+            [ "affjax"
+            , "b64"
+            , "biscotti-cookie"
+            , "console"
+            , "crypto"
             , "effect"
+            , "envisage"
+            , "form-urlencoded"
+            , "http-methods"
+            , "httpure"
             , "parsing"
             , "postgresql-client"
             , "psci-support"
-            , "uri" ]
-            , repo = "https://github.com/johncowie/purescript-johncowie-postgres.git"
+            , "uri"
+            ]
+            , repo = "https://github.com/johncowie/purescript-johncowie-stuff.git"
             , version = "v0.0.1"
           }
       }

@@ -3,16 +3,22 @@ module Main where
 import Prelude
 
 import Control.Monad.Except.Trans (ExceptT(..), runExceptT)
+import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Console as Console
+import Envisage (Var, defaultTo, describe, initComponents, mkComponent, showParsed, var)
+import Envisage.Console (printErrorsForConsole)
 import Fundoscopic.Handlers as H
 import Fundoscopic.Routing as R
 import JohnCowie.Data.Lens as L
 import JohnCowie.HTTPure (class IsRequest, BasicRequest, Response, _path, serve')
+import JohnCowie.OAuth (OAuth)
+import JohnCowie.OAuth.Google as Google
+import Node.Process as NP
 
 data Mode = Dev
 instance showMode :: Show Mode where
@@ -25,15 +31,21 @@ logError eM = do
     (Left err) -> liftEffect (Console.error err)
     _ -> pure unit
 
-lookupHandler :: R.HandlerId -> BasicRequest Unit -> Aff (Response String)
-lookupHandler R.HelloWorld = H.helloWorld
-lookupHandler R.NotFound = H.notFound
-lookupHandler R.Login = H.login
+lookupHandler :: Deps -> R.HandlerId -> BasicRequest Unit -> Aff (Response String)
+lookupHandler deps R.HelloWorld = H.helloWorld
+lookupHandler deps R.NotFound = H.notFound
+lookupHandler deps R.Login = H.login deps.oauth
 
 app :: forall req res. (IsRequest req) => (R.HandlerId -> req Unit -> res) -> req Unit -> res
 app handlerLookup req = (handlerLookup handlerId) req
   where handlerId = R.handlerIdForPath path
         path = L.view _path req
+
+type Deps = { oauth :: OAuth
+            , server :: {port :: Int}}
+
+serverConfig :: {port :: Var Int}
+serverConfig = {port: var "PORT" # describe "Server port" # defaultTo 9000 # showParsed}
 
 main :: Effect Unit
 main = launchAff_ $ logError $ runExceptT do
@@ -41,8 +53,13 @@ main = launchAff_ $ logError $ runExceptT do
         backlog = Nothing
         hostname = "0.0.0.0"
         mode = Dev
+    env <- ExceptT $ liftEffect $ map Right $ NP.getEnv
+    deps <- ExceptT $ pure $ lmap printErrorsForConsole $ initComponents env {
+      oauth: Google.oauth
+    , server: mkComponent serverConfig identity
+    }
     void $ ExceptT $ liftEffect $ Right
-      <$> ( serve' { port, backlog, hostname } (app lookupHandler) do
+      <$> ( serve' { port: deps.server.port, backlog, hostname } (app (lookupHandler deps)) do
             Console.log $ " ┌────────────────────────────────────────────┐"
             Console.log $ " │ Server now up on port " <> show port <> "                 │"
             Console.log $ " └────────────────────────────────────────────┘"
