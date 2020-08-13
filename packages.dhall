@@ -170,7 +170,7 @@ let additions =
             , "transformers"
             ]
           , repo = "https://github.com/johncowie/purescript-envisage.git"
-          , version = "v0.0.4"
+          , version = "v0.0.5"
        }
       , johncowie-bricker =
           { dependencies =
@@ -204,7 +204,7 @@ let additions =
             , "uri"
             ]
             , repo = "https://github.com/johncowie/purescript-johncowie-stuff.git"
-            , version = "v0.0.1"
+            , version = "v0.0.2"
           }
       }
 

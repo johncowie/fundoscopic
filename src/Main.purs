@@ -10,7 +10,7 @@ import Effect (Effect)
 import Effect.Aff (Aff, launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Console as Console
-import Envisage (Var, defaultTo, describe, initComponents, mkComponent, showParsed, var)
+import Envisage (Var, defaultTo, describe, readEnv, mkComponent, showParsed, var)
 import Envisage.Console (printErrorsForConsole)
 import Fundoscopic.Handlers as H
 import Fundoscopic.Routing as R
@@ -54,7 +54,7 @@ main = launchAff_ $ logError $ runExceptT do
         hostname = "0.0.0.0"
         mode = Dev
     env <- ExceptT $ liftEffect $ map Right $ NP.getEnv
-    deps <- ExceptT $ pure $ lmap printErrorsForConsole $ initComponents env {
+    deps <- ExceptT $ pure $ lmap printErrorsForConsole $ readEnv env {
       oauth: Google.oauth
     , server: mkComponent serverConfig identity
     }
