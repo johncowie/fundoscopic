@@ -2,10 +2,13 @@ module Fundoscopic.Handlers where
 
 import Fundoscopic.Prelude
 
-import JohnCowie.HTTPure (BasicRequest, Response, response, setContentType, _val, redirect)
+import Biscotti.Cookie as Cookie
+
+import JohnCowie.HTTPure (BasicRequest, Response, response, setContentType, _val, redirect, setCookie)
 import JohnCowie.OAuth (OAuth, OAuthCode)
 import JohnCowie.PostgreSQL (DB)
 import JohnCowie.Data.Lens as L
+import JohnCowie.JWT as JWT
 
 import Text.Smolder.HTML (Html, html)
 import Text.Smolder.HTML as H
@@ -16,6 +19,7 @@ import Text.Smolder.Renderer.String (render)
 import Fundoscopic.Domain.User as User
 import Fundoscopic.DB as DB
 import Fundoscopic.Routing as Routes
+import Fundoscopic.Middleware.Auth (AuthedRequest)
 
 htmlResponse :: forall e. Int -> Html e -> Response String
 htmlResponse status = render >>> response status >>> setContentType "text/html"
@@ -27,7 +31,7 @@ notFound _ = pure $ htmlResponse 404 do
       H.div do
         H.h1 $ text "Not Found"
 
-home :: forall m. (Monad m) => BasicRequest Unit -> m (Response String)
+home :: forall m. (Monad m) => AuthedRequest {sub :: User.UserId} Unit -> m (Response String)
 home _ = pure $ htmlResponse 200 do
   html do
     H.body do
@@ -42,11 +46,13 @@ login oauth _ = pure $ htmlResponse 200 do
         H.h1 $ text "Login"
         H.a ! A.href oauth.redirect $ text "Login"
 
-oauthCallback :: DB -> OAuth -> BasicRequest {code :: OAuthCode} -> Aff (Either String (Response String))
-oauthCallback db oauth req = runExceptT do
+googleOauthCallback :: DB -> OAuth -> JWT.JWTGenerator {sub :: User.UserId} -> BasicRequest ({code :: OAuthCode} /\ Unit) -> Aff (Either String (Response String))
+googleOauthCallback db oauth jwtGen req = runExceptT do
   userData <- ExceptT $ oauth.handleCode code
   -- FIXME google should return accessToken
   let newUser = User.newUser userData.name (User.newGoogleId userData.sub) (User.newGoogleAccessToken "arghghh")
-  void $ ExceptT $ map (lmap show) $ DB.upsertUser newUser db
-  ExceptT $ pure $ pure $ redirect (Routes.routeForHandler Routes.Home)
-  where {code} = L.view _val req
+  userId <- ExceptT $ map (lmap show) $ DB.upsertUser newUser db
+  (token :: JWT.JWT) <- ExceptT $ liftEffect $ map Right $ jwtGen.generate {sub: userId}
+  let cookie = Cookie.new "accesstoken" (unwrap token) # Cookie.setSecure
+  pure $ setCookie cookie $ redirect (Routes.routeForHandler Routes.Home)
+  where ({code} /\ _) = L.view _val req

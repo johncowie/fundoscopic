@@ -14,15 +14,17 @@ import Data.String as Str
 
 -- type Routes = BiMap HandlerId (Array String)
 
-data HandlerId = Home | Login
+data HandlerId = Home | Login | GoogleOAuthCallback
 
 handlerIdForPath :: Array String -> Maybe HandlerId
 handlerIdForPath ["login"] = Just Login
+handlerIdForPath ["google"] = Just GoogleOAuthCallback
 handlerIdForPath [] = Just Home
 handlerIdForPath _ = Nothing
 
 routeForHandler :: HandlerId -> String
 routeForHandler Login = joinPath ["login"]
+routeForHandler GoogleOAuthCallback = joinPath ["google"]
 routeForHandler Home = joinPath []
 
 joinPath :: Array String -> String
