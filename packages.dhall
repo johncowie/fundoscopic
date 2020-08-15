@@ -204,7 +204,7 @@ let additions =
             , "uri"
             ]
             , repo = "https://github.com/johncowie/purescript-johncowie-stuff.git"
-            , version = "v0.0.2"
+            , version = "v0.0.3"
           }
       }
 

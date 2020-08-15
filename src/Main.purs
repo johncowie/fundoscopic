@@ -1,23 +1,20 @@
 module Main where
 
-import Prelude
+import Fundoscopic.Prelude
 
-import Control.Monad.Except.Trans (ExceptT(..), runExceptT)
-import Data.Bifunctor (lmap)
-import Data.Either (Either(..))
-import Data.Maybe (Maybe(..))
-import Effect (Effect)
-import Effect.Aff (Aff, launchAff_)
-import Effect.Class (liftEffect)
 import Effect.Console as Console
-import Envisage (Var, defaultTo, describe, readEnv, mkComponent, showParsed, var)
+import Envisage (Var, defaultTo, describe, readEnv, showParsed, var)
 import Envisage.Console (printErrorsForConsole)
 import Fundoscopic.Handlers as H
 import Fundoscopic.Routing as R
+import Fundoscopic.Migrations (migrationStore)
 import JohnCowie.Data.Lens as L
 import JohnCowie.HTTPure (class IsRequest, BasicRequest, Response, _path, serve')
 import JohnCowie.OAuth (OAuth)
 import JohnCowie.OAuth.Google as Google
+import JohnCowie.PostgreSQL (dbComponent, DB)
+import JohnCowie.Migrations (Migrator, migrate)
+import JohnCowie.PostgreSQL.Migrations (executor, intVersionStore)
 import Node.Process as NP
 
 data Mode = Dev
@@ -42,10 +39,19 @@ app handlerLookup req = (handlerLookup handlerId) req
         path = L.view _path req
 
 type Deps = { oauth :: OAuth
-            , server :: {port :: Int}}
+            , server :: {port :: Int}
+            , db :: DB }
 
 serverConfig :: {port :: Var Int}
 serverConfig = {port: var "PORT" # describe "Server port" # defaultTo 9000 # showParsed}
+
+migrator :: DB -> Migrator Aff Int String
+migrator pool =
+  { executor: executor pool
+  , migrationStore
+  , versionStore: intVersionStore pool
+  , logger: liftEffect <<< Console.log
+  }
 
 main :: Effect Unit
 main = launchAff_ $ logError $ runExceptT do
@@ -54,10 +60,14 @@ main = launchAff_ $ logError $ runExceptT do
         hostname = "0.0.0.0"
         mode = Dev
     env <- ExceptT $ liftEffect $ map Right $ NP.getEnv
-    deps <- ExceptT $ pure $ lmap printErrorsForConsole $ readEnv env {
+    {oauth, server, dbE} <- ExceptT $ pure $ lmap printErrorsForConsole $ readEnv env {
       oauth: Google.oauth
-    , server: mkComponent serverConfig identity
+    , server: serverConfig
+    , dbE: dbComponent "postgres://localhost:5432/fundoscopic"
     }
+    db <- ExceptT $ liftEffect dbE
+    let deps = {oauth, server, db}
+    ExceptT $ migrate $ migrator db
     void $ ExceptT $ liftEffect $ Right
       <$> ( serve' { port: deps.server.port, backlog, hostname } (app (lookupHandler deps)) do
             Console.log $ " ┌────────────────────────────────────────────┐"
