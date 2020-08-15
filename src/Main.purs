@@ -28,12 +28,14 @@ logError eM = do
     (Left err) -> liftEffect (Console.error err)
     _ -> pure unit
 
-lookupHandler :: Deps -> R.HandlerId -> BasicRequest Unit -> Aff (Response String)
-lookupHandler deps R.HelloWorld = H.helloWorld
-lookupHandler deps R.NotFound = H.notFound
-lookupHandler deps R.Login = H.login deps.oauth
+lookupHandler :: Deps -> Maybe R.HandlerId -> BasicRequest Unit -> Aff (Response String)
+lookupHandler deps = case _ of
+  Nothing -> H.notFound
+  Just id -> case id of
+    R.Home -> H.home
+    R.Login -> H.login deps.oauth
 
-app :: forall req res. (IsRequest req) => (R.HandlerId -> req Unit -> res) -> req Unit -> res
+app :: forall req res. (IsRequest req) => (Maybe R.HandlerId -> req Unit -> res) -> req Unit -> res
 app handlerLookup req = (handlerLookup handlerId) req
   where handlerId = R.handlerIdForPath path
         path = L.view _path req
