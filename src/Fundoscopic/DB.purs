@@ -13,7 +13,7 @@ upsertUser user =
               """
               INSERT INTO users (google_id, name, access_token) VALUES ($1, $2, $3)
               ON CONFLICT ON CONSTRAINT users_google_id_key
-              DO UPDATE SET name = $3
+              DO UPDATE SET name = $2, access_token = $3
               RETURNING id;
               """) (user.googleId /\ user.name /\ user.accessToken)
     case rows of
@@ -25,7 +25,7 @@ retrieveUser userId =
   flip runQuery \conn -> do
     rows <- PG.query conn (PG.Query
       """
-        SELECT (google_id, name, access_token) FROM users
+        SELECT google_id, name, access_token FROM users
         WHERE id = $1;
       """
     ) (Row1 userId)

@@ -11,7 +11,7 @@ foreign import data Auth :: Type
 type Value = String
 
 sheetValues :: GoogleConfig -> JWT -> String -> String -> Aff (Either String (Array (Array Value)))
-sheetValues authConfig token spreadsheetId range =
+sheetValues authConfig token spreadsheetId range = 
   map (lmap show) $ try $ fromEffectFnAff $ _sheetValues auth spreadsheetId range
   where auth = _auth authConfig.clientId authConfig.clientSecret authConfig.callbackUrl (unwrap token)
 

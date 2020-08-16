@@ -16,7 +16,7 @@ exports._auth = function(clientId) {
     return function(redirectUrl) {
       return function(accessToken) {
         const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUrl);
-        oAuth2Client.setCredentials(accessToken)
+        oAuth2Client.setCredentials({access_token: accessToken})
         return oAuth2Client;
       }
     }
@@ -27,9 +27,10 @@ exports._sheetValues = function(auth) {
   return function(spreadsheetId) {
     return function(range) {
       return function(onError, onSuccess) {
-        const sheets = google.sheets({version: 'v4', auth});
+        const sheets = google.sheets({version: 'v4', auth: auth});
+        console.debug(auth)
         sheets.spreadsheets.values.get({
-          spreadsheetId: spreadheetId,
+          spreadsheetId: spreadsheetId,
           range: range
         }, (err, res) => {
           if(err) {

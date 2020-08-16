@@ -61,7 +61,7 @@ spreadsheet db googleConfig authedRequest = runExceptT do
   userM <- ExceptT $ map (lmap show) $ DB.retrieveUser sub db
   user <- ExceptT $ pure $ note ("No user found for token: Id = " <> (show (unwrap sub))) userM
   let accessToken = user.accessToken
-  sheetData <- ExceptT $ Sheets.sheetValues googleConfig (rewrap accessToken) "1WjWrck5uJYcLFvleNedzrWSx9vsEYMFEl1MuUc8x7PQ" "A1:F5"
+  sheetData <- ExceptT $ Sheets.sheetValues googleConfig (rewrap accessToken) "1WjWrck5uJYcLFvleNedzrWSx9vsEYMFEl1MuUc8x7PQ" "Game 1!A1:F5"
   pure $ response 200 (show sheetData)
   where {sub} = tokenPayload authedRequest
 
