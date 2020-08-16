@@ -206,8 +206,9 @@ let additions =
           }
       }
 
+
 let overrides =
-      { johncowie-stuff = additions.johncowie-stuff  // { repo = "../purescript-johncowie-stuff"}
+      { johncowie-stuff = ../purescript-johncowie-stuff/spago.dhall as Location
       }
 
-in  upstream // overrides // additions
+in  upstream // additions // overrides

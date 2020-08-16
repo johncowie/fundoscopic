@@ -50,7 +50,7 @@ googleOauthCallback :: DB -> OAuth -> JWT.JWTGenerator {sub :: User.UserId} -> B
 googleOauthCallback db oauth jwtGen req = runExceptT do
   userData <- ExceptT $ oauth.handleCode code
   -- FIXME google should return accessToken
-  let newUser = User.newUser userData.name (User.newGoogleId userData.sub) (User.newGoogleAccessToken "arghghh")
+  let newUser = User.newUser userData.name (User.newGoogleId userData.sub) (User.newGoogleAccessToken userData.accessToken)
   userId <- ExceptT $ map (lmap show) $ DB.upsertUser newUser db
   (token :: JWT.JWT) <- ExceptT $ liftEffect $ map Right $ jwtGen.generate {sub: userId}
   let cookie = Cookie.new "accesstoken" (unwrap token) # Cookie.setHttpOnly -- # Cookie.setSecure FIXME do his
