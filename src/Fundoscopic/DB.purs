@@ -12,7 +12,7 @@ upsertUser user =
     rows <- PG.query conn (PG.Query
               """
               INSERT INTO users (google_id, name, access_token) VALUES ($1, $2, $3)
-              ON CONFLICT ON CONSTRAINT users_third_party_third_party_id_key
+              ON CONFLICT ON CONSTRAINT users_google_id_key
               DO UPDATE SET name = $3
               RETURNING id;
               """) (user.googleId /\ user.name /\ user.accessToken)

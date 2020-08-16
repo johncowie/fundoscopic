@@ -14,7 +14,7 @@ where
 
 import Fundoscopic.Wrapper (Wrapper, wrap)
 
-type UserId = Wrapper "UserId" String
+type UserId = Wrapper "UserId" Int
 
 type GoogleId = Wrapper "GoogleId" String
 

@@ -46,7 +46,7 @@ tokenPayload (AuthedRequest payload _) = payload
 
 retrieveToken :: forall req a token. (IsRequest req) => (Newtype token String) => req a -> Either String token
 retrieveToken req = do
-  cookieM <- Req.getCookie "token" req
+  cookieM <- Req.getCookie "accesstoken" req
   cookie <- note "No token cookie found" cookieM
   pure $ wrap $ Cookie.getValue cookie
 

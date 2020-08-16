@@ -14,18 +14,21 @@ import JohnCowie.Data.Lens as L
 import JohnCowie.HTTPure (class IsRequest, BasicRequest, Response, _path, serve', response, redirect)
 import JohnCowie.HTTPure.Middleware.QueryParams as QP
 import JohnCowie.HTTPure.Middleware.Error as ErrM
+import Fundoscopic.Middleware.Log as LogM
 import Fundoscopic.Middleware.Auth as AuthM
 import JohnCowie.OAuth (OAuth)
 import JohnCowie.OAuth.Google as Google
+import JohnCowie.OAuth.Stub as Stub
 import JohnCowie.PostgreSQL (dbComponent, DB)
 import JohnCowie.Migrations (Migrator, migrate)
 import JohnCowie.PostgreSQL.Migrations (executor, intVersionStore)
 import JohnCowie.JWT (JWTGenerator, jwtGenerator)
 import Node.Process as NP
 
-data Mode = Dev
+data Mode = Dev | Prod
 instance showMode :: Show Mode where
   show Dev = "Dev"
+  show Prod = "Prod"
 
 logError :: Aff (Either String Unit) -> Aff Unit
 logError eM = do
@@ -49,9 +52,10 @@ lookupHandler :: Deps -> Maybe R.HandlerId -> BasicRequest Unit -> Aff (Response
 lookupHandler deps = case _ of
   Nothing -> H.notFound
   Just id -> case id of
-    R.Home -> AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
+    R.Home -> LogM.wrapLogRequest $
+              AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
               H.home
-    R.Login -> H.login deps.oauth
+    R.Login -> LogM.wrapLogRequest $ H.login deps.oauth
     R.GoogleOAuthCallback -> QP.wrapParseQueryParams (map pure errorsResponse) $
                              ErrM.wrapHandleError serverErrorResponse $
                              H.googleOauthCallback deps.db deps.oauth deps.jwt
@@ -81,15 +85,19 @@ jwtComponent :: Component (JWTGenerator {sub :: User.UserId})
 jwtComponent = mkComponent {jwtSecret: var "JWT_SECRET"} $
   \{jwtSecret} -> jwtGenerator jwtSecret
 
-main :: Effect Unit
-main = launchAff_ $ logError $ runExceptT do
+stubOAuth :: Component OAuth
+stubOAuth = mkComponent {} $ const (Stub.oauth "http://localhost:9000/google")
+
+main' :: Mode -> Effect Unit
+main' mode = launchAff_ $ logError $ runExceptT do
     let port = 9000
         backlog = Nothing
         hostname = "0.0.0.0"
-        mode = Dev
     env <- ExceptT $ liftEffect $ map Right $ NP.getEnv
     {oauth, server, dbE, jwt} <- ExceptT $ pure $ lmap printErrorsForConsole $ readEnv env {
-      oauth: Google.oauth
+      oauth: case mode of
+        Dev -> stubOAuth
+        Prod -> Google.oauth
     , server: serverConfig
     , dbE: dbComponent "postgres://localhost:5432/fundoscopic"
     , jwt: jwtComponent
@@ -104,3 +112,6 @@ main = launchAff_ $ logError $ runExceptT do
             Console.log $ " └────────────────────────────────────────────┘"
             Console.log $ "Mode: " <> show mode
         )
+
+main :: Effect Unit
+main = main' Prod

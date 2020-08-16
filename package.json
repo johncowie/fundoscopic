@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "spago run",
+    "dev": "spago run -m Dev",
     "migrate": "spago run -m Fundoscopic.Migrations",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -22,7 +23,13 @@
   },
   "homepage": "https://github.com/johncowie/fundoscopic#readme",
   "dependencies": {
+    "big-integer": "1.6.48",
     "decimal.js": "10.2.0",
-    "pg": "8.3.0"
+    "pg": "8.3.0",
+    "pg-native": "3.0.0",
+    "xhr2": "0.2.0"
+  },
+  "devDependencies": {
+    "noderify": "5.0.0"
   }
 }

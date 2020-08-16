@@ -4,7 +4,7 @@ import Fundoscopic.Prelude
 
 import Biscotti.Cookie as Cookie
 
-import JohnCowie.HTTPure (BasicRequest, Response, response, setContentType, _val, redirect, setCookie)
+import JohnCowie.HTTPure (BasicRequest, Response, _val, redirect, response, setContentType, setCookie)
 import JohnCowie.OAuth (OAuth, OAuthCode)
 import JohnCowie.PostgreSQL (DB)
 import JohnCowie.Data.Lens as L
@@ -53,6 +53,6 @@ googleOauthCallback db oauth jwtGen req = runExceptT do
   let newUser = User.newUser userData.name (User.newGoogleId userData.sub) (User.newGoogleAccessToken "arghghh")
   userId <- ExceptT $ map (lmap show) $ DB.upsertUser newUser db
   (token :: JWT.JWT) <- ExceptT $ liftEffect $ map Right $ jwtGen.generate {sub: userId}
-  let cookie = Cookie.new "accesstoken" (unwrap token) # Cookie.setSecure
+  let cookie = Cookie.new "accesstoken" (unwrap token) # Cookie.setHttpOnly -- # Cookie.setSecure FIXME do his
   pure $ setCookie cookie $ redirect (Routes.routeForHandler Routes.Home)
   where ({code} /\ _) = L.view _val req
