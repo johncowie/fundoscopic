@@ -25,6 +25,7 @@
   "dependencies": {
     "big-integer": "1.6.48",
     "decimal.js": "10.2.0",
+    "googleapis": "39.2.0",
     "pg": "8.3.0",
     "pg-native": "3.0.0",
     "xhr2": "0.2.0"

@@ -6,23 +6,23 @@ import Data.String as Str
 import Effect.Console as Console
 import Envisage (Var, Component, mkComponent, defaultTo, describe, readEnv, showParsed, var)
 import Envisage.Console (printErrorsForConsole)
-import Fundoscopic.Handlers as H
-import Fundoscopic.Routing as R
-import Fundoscopic.Migrations (migrationStore)
 import Fundoscopic.Domain.User as User
+import Fundoscopic.Handlers as H
+import Fundoscopic.Middleware.Auth as AuthM
+import Fundoscopic.Middleware.Log as LogM
+import Fundoscopic.Migrations (migrationStore)
+import Fundoscopic.Routing as R
 import JohnCowie.Data.Lens as L
 import JohnCowie.HTTPure (class IsRequest, BasicRequest, Response, _path, serve', response, redirect)
-import JohnCowie.HTTPure.Middleware.QueryParams as QP
 import JohnCowie.HTTPure.Middleware.Error as ErrM
-import Fundoscopic.Middleware.Log as LogM
-import Fundoscopic.Middleware.Auth as AuthM
+import JohnCowie.HTTPure.Middleware.QueryParams as QP
+import JohnCowie.JWT (JWTGenerator, jwtGenerator)
+import JohnCowie.Migrations (Migrator, migrate)
 import JohnCowie.OAuth (OAuth)
 import JohnCowie.OAuth.Google as Google
 import JohnCowie.OAuth.Stub as Stub
 import JohnCowie.PostgreSQL (dbComponent, DB)
-import JohnCowie.Migrations (Migrator, migrate)
 import JohnCowie.PostgreSQL.Migrations (executor, intVersionStore)
-import JohnCowie.JWT (JWTGenerator, jwtGenerator)
 import Node.Process as NP
 
 data Mode = Dev | Prod
@@ -55,17 +55,20 @@ lookupHandler deps = case _ of
     R.Home -> LogM.wrapLogRequest $
               AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
               H.home
-    R.Login -> LogM.wrapLogRequest $ H.login deps.oauth
+    R.Login -> LogM.wrapLogRequest $ H.login deps.oauth.component
     R.GoogleOAuthCallback -> QP.wrapParseQueryParams (map pure errorsResponse) $
                              ErrM.wrapHandleError serverErrorResponse $
-                             H.googleOauthCallback deps.db deps.oauth deps.jwt
+                             H.googleOauthCallback deps.db deps.oauth.component deps.jwt
+    R.SheetTest -> AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
+                   ErrM.wrapHandleError serverErrorResponse $
+                   H.spreadsheet deps.db deps.oauth.config
 
 app :: forall req res. (IsRequest req) => (Maybe R.HandlerId -> req Unit -> res) -> req Unit -> res
 app handlerLookup req = (handlerLookup handlerId) req
   where handlerId = R.handlerIdForPath path
         path = L.view _path req
 
-type Deps = { oauth :: OAuth
+type Deps = { oauth :: {component :: OAuth, config :: Google.GoogleConfig}
             , server :: {port :: Int}
             , db :: DB
             , jwt :: JWTGenerator {sub :: User.UserId}}
@@ -85,8 +88,10 @@ jwtComponent :: Component (JWTGenerator {sub :: User.UserId})
 jwtComponent = mkComponent {jwtSecret: var "JWT_SECRET"} $
   \{jwtSecret} -> jwtGenerator jwtSecret
 
-stubOAuth :: Component OAuth
-stubOAuth = mkComponent {} $ const (Stub.oauth "http://localhost:9000/google")
+stubGoogleOAuth :: Component {component :: OAuth, config :: Google.GoogleConfig}
+stubGoogleOAuth = mkComponent {} $
+  const { component: (Stub.oauth "http://localhost:9000/google")
+        , config: mempty}
 
 main' :: Mode -> Effect Unit
 main' mode = launchAff_ $ logError $ runExceptT do
@@ -96,7 +101,7 @@ main' mode = launchAff_ $ logError $ runExceptT do
     env <- ExceptT $ liftEffect $ map Right $ NP.getEnv
     {oauth, server, dbE, jwt} <- ExceptT $ pure $ lmap printErrorsForConsole $ readEnv env {
       oauth: case mode of
-        Dev -> stubOAuth
+        Dev -> stubGoogleOAuth
         Prod -> Google.oauth
     , server: serverConfig
     , dbE: dbComponent "postgres://localhost:5432/fundoscopic"

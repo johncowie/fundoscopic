@@ -34,5 +34,5 @@ instance toSQLValue :: ToSQLValue v => ToSQLValue (Wrapper typ v) where
 instance fromSQLValue :: FromSQLValue v => FromSQLValue (Wrapper typ v) where
   fromSQLValue = fromSQLValue >>> map wrap
 
-rewrap :: forall a b v. Wrapper a v -> Wrapper b v
+rewrap :: forall a b v. (Newtype a v) => (Newtype b v) => a -> b
 rewrap = unwrap >>> wrap

@@ -6578,7 +6578,1502 @@ class Pool extends EventEmitter {
 module.exports = Pool
 
 },
-"fe4zainr6GPRUpZwjUoGKduiW/KTIRaYfGKNrR6lvE0=":
+"g2/go55S8FHWJYPYN107JwtMuT3QJrElQ4qJ5aAljEE=":
+function (require, module, exports, __dirname, __filename) {
+'use strict'
+
+var extend = require('xtend/mutable')
+
+module.exports = PostgresInterval
+
+function PostgresInterval (raw) {
+  if (!(this instanceof PostgresInterval)) {
+    return new PostgresInterval(raw)
+  }
+  extend(this, parse(raw))
+}
+var properties = ['seconds', 'minutes', 'hours', 'days', 'months', 'years']
+PostgresInterval.prototype.toPostgres = function () {
+  var filtered = properties.filter(this.hasOwnProperty, this)
+
+  // In addition to `properties`, we need to account for fractions of seconds.
+  if (this.milliseconds && filtered.indexOf('seconds') < 0) {
+    filtered.push('seconds')
+  }
+
+  if (filtered.length === 0) return '0'
+  return filtered
+    .map(function (property) {
+      var value = this[property] || 0
+
+      // Account for fractional part of seconds,
+      // remove trailing zeroes.
+      if (property === 'seconds' && this.milliseconds) {
+        value = (value + this.milliseconds / 1000).toFixed(6).replace(/\.?0+$/, '')
+      }
+
+      return value + ' ' + property
+    }, this)
+    .join(' ')
+}
+
+var propertiesISOEquivalent = {
+  years: 'Y',
+  months: 'M',
+  days: 'D',
+  hours: 'H',
+  minutes: 'M',
+  seconds: 'S'
+}
+var dateProperties = ['years', 'months', 'days']
+var timeProperties = ['hours', 'minutes', 'seconds']
+// according to ISO 8601
+PostgresInterval.prototype.toISOString = PostgresInterval.prototype.toISO = function () {
+  var datePart = dateProperties
+    .map(buildProperty, this)
+    .join('')
+
+  var timePart = timeProperties
+    .map(buildProperty, this)
+    .join('')
+
+  return 'P' + datePart + 'T' + timePart
+
+  function buildProperty (property) {
+    var value = this[property] || 0
+
+    // Account for fractional part of seconds,
+    // remove trailing zeroes.
+    if (property === 'seconds' && this.milliseconds) {
+      value = (value + this.milliseconds / 1000).toFixed(6).replace(/0+$/, '')
+    }
+
+    return value + propertiesISOEquivalent[property]
+  }
+}
+
+var NUMBER = '([+-]?\\d+)'
+var YEAR = NUMBER + '\\s+years?'
+var MONTH = NUMBER + '\\s+mons?'
+var DAY = NUMBER + '\\s+days?'
+var TIME = '([+-])?([\\d]*):(\\d\\d):(\\d\\d)\\.?(\\d{1,6})?'
+var INTERVAL = new RegExp([YEAR, MONTH, DAY, TIME].map(function (regexString) {
+  return '(' + regexString + ')?'
+})
+  .join('\\s*'))
+
+// Positions of values in regex match
+var positions = {
+  years: 2,
+  months: 4,
+  days: 6,
+  hours: 9,
+  minutes: 10,
+  seconds: 11,
+  milliseconds: 12
+}
+// We can use negative time
+var negatives = ['hours', 'minutes', 'seconds', 'milliseconds']
+
+function parseMilliseconds (fraction) {
+  // add omitted zeroes
+  var microseconds = fraction + '000000'.slice(fraction.length)
+  return parseInt(microseconds, 10) / 1000
+}
+
+function parse (interval) {
+  if (!interval) return {}
+  var matches = INTERVAL.exec(interval)
+  var isNegative = matches[8] === '-'
+  return Object.keys(positions)
+    .reduce(function (parsed, property) {
+      var position = positions[property]
+      var value = matches[position]
+      // no empty string
+      if (!value) return parsed
+      // milliseconds are actually microseconds (up to 6 digits)
+      // with omitted trailing zeroes.
+      value = property === 'milliseconds'
+        ? parseMilliseconds(value)
+        : parseInt(value, 10)
+      // no zeros
+      if (!value) return parsed
+      if (isNegative && ~negatives.indexOf(property)) {
+        value *= -1
+      }
+      parsed[property] = value
+      return parsed
+    }, {})
+}
+
+},
+"gHulgO1CPlGGcsJ7QCKlastpO+BDSXM//B/m8yT7zuI=":
+function (require, module, exports, __dirname, __filename) {
+'use strict'
+
+exports.parse = function (source, transform) {
+  return new ArrayParser(source, transform).parse()
+}
+
+class ArrayParser {
+  constructor (source, transform) {
+    this.source = source
+    this.transform = transform || identity
+    this.position = 0
+    this.entries = []
+    this.recorded = []
+    this.dimension = 0
+  }
+
+  isEof () {
+    return this.position >= this.source.length
+  }
+
+  nextCharacter () {
+    var character = this.source[this.position++]
+    if (character === '\\') {
+      return {
+        value: this.source[this.position++],
+        escaped: true
+      }
+    }
+    return {
+      value: character,
+      escaped: false
+    }
+  }
+
+  record (character) {
+    this.recorded.push(character)
+  }
+
+  newEntry (includeEmpty) {
+    var entry
+    if (this.recorded.length > 0 || includeEmpty) {
+      entry = this.recorded.join('')
+      if (entry === 'NULL' && !includeEmpty) {
+        entry = null
+      }
+      if (entry !== null) entry = this.transform(entry)
+      this.entries.push(entry)
+      this.recorded = []
+    }
+  }
+
+  consumeDimensions () {
+    if (this.source[0] === '[') {
+      while (!this.isEof()) {
+        var char = this.nextCharacter()
+        if (char.value === '=') break
+      }
+    }
+  }
+
+  parse (nested) {
+    var character, parser, quote
+    this.consumeDimensions()
+    while (!this.isEof()) {
+      character = this.nextCharacter()
+      if (character.value === '{' && !quote) {
+        this.dimension++
+        if (this.dimension > 1) {
+          parser = new ArrayParser(this.source.substr(this.position - 1), this.transform)
+          this.entries.push(parser.parse(true))
+          this.position += parser.position - 2
+        }
+      } else if (character.value === '}' && !quote) {
+        this.dimension--
+        if (!this.dimension) {
+          this.newEntry()
+          if (nested) return this.entries
+        }
+      } else if (character.value === '"' && !character.escaped) {
+        if (quote) this.newEntry(true)
+        quote = !quote
+      } else if (character.value === ',' && !quote) {
+        this.newEntry()
+      } else {
+        this.record(character.value)
+      }
+    }
+    if (this.dimension !== 0) {
+      throw new Error('array dimension not balanced')
+    }
+    return this.entries
+  }
+}
+
+function identity (value) {
+  return value
+}
+
+},
+"ivxPzUcGZhHgeKX6RYdXghUBzhJ5MemCxs/8au6lkz0=":
+function (require, module, exports, __dirname, __filename) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const serializer_1 = require("./serializer");
+exports.serialize = serializer_1.serialize;
+const parser_1 = require("./parser");
+function parse(stream, callback) {
+    const parser = new parser_1.Parser();
+    stream.on('data', (buffer) => parser.parse(buffer, callback));
+    return new Promise((resolve) => stream.on('end', () => resolve()));
+}
+exports.parse = parse;
+//# sourceMappingURL=index.js.map
+},
+"jjKg038gvW99W9v5nQQaonvkfLvlFyrBPr9zgKELO/Y=":
+function (require, module, exports, __dirname, __filename) {
+/**
+ * Module dependencies.
+ */
+
+var fs = require('fs'),
+  path = require('path'),
+  fileURLToPath = require('file-uri-to-path'),
+  join = path.join,
+  dirname = path.dirname,
+  exists =
+    (fs.accessSync &&
+      function(path) {
+        try {
+          fs.accessSync(path);
+        } catch (e) {
+          return false;
+        }
+        return true;
+      }) ||
+    fs.existsSync ||
+    path.existsSync,
+  defaults = {
+    arrow: process.env.NODE_BINDINGS_ARROW || ' → ',
+    compiled: process.env.NODE_BINDINGS_COMPILED_DIR || 'compiled',
+    platform: process.platform,
+    arch: process.arch,
+    nodePreGyp:
+      'node-v' +
+      process.versions.modules +
+      '-' +
+      process.platform +
+      '-' +
+      process.arch,
+    version: process.versions.node,
+    bindings: 'bindings.node',
+    try: [
+      // node-gyp's linked version in the "build" dir
+      ['module_root', 'build', 'bindings'],
+      // node-waf and gyp_addon (a.k.a node-gyp)
+      ['module_root', 'build', 'Debug', 'bindings'],
+      ['module_root', 'build', 'Release', 'bindings'],
+      // Debug files, for development (legacy behavior, remove for node v0.9)
+      ['module_root', 'out', 'Debug', 'bindings'],
+      ['module_root', 'Debug', 'bindings'],
+      // Release files, but manually compiled (legacy behavior, remove for node v0.9)
+      ['module_root', 'out', 'Release', 'bindings'],
+      ['module_root', 'Release', 'bindings'],
+      // Legacy from node-waf, node <= 0.4.x
+      ['module_root', 'build', 'default', 'bindings'],
+      // Production "Release" buildtype binary (meh...)
+      ['module_root', 'compiled', 'version', 'platform', 'arch', 'bindings'],
+      // node-qbs builds
+      ['module_root', 'addon-build', 'release', 'install-root', 'bindings'],
+      ['module_root', 'addon-build', 'debug', 'install-root', 'bindings'],
+      ['module_root', 'addon-build', 'default', 'install-root', 'bindings'],
+      // node-pre-gyp path ./lib/binding/{node_abi}-{platform}-{arch}
+      ['module_root', 'lib', 'binding', 'nodePreGyp', 'bindings']
+    ]
+  };
+
+/**
+ * The main `bindings()` function loads the compiled bindings for a given module.
+ * It uses V8's Error API to determine the parent filename that this function is
+ * being invoked from, which is then used to find the root directory.
+ */
+
+function bindings(opts) {
+  // Argument surgery
+  if (typeof opts == 'string') {
+    opts = { bindings: opts };
+  } else if (!opts) {
+    opts = {};
+  }
+
+  // maps `defaults` onto `opts` object
+  Object.keys(defaults).map(function(i) {
+    if (!(i in opts)) opts[i] = defaults[i];
+  });
+
+  // Get the module root
+  if (!opts.module_root) {
+    opts.module_root = exports.getRoot(exports.getFileName());
+  }
+
+  // Ensure the given bindings name ends with .node
+  if (path.extname(opts.bindings) != '.node') {
+    opts.bindings += '.node';
+  }
+
+  // https://github.com/webpack/webpack/issues/4175#issuecomment-342931035
+  var requireFunc =
+    typeof __webpack_require__ === 'function'
+      ? __non_webpack_require__
+      : require;
+
+  var tries = [],
+    i = 0,
+    l = opts.try.length,
+    n,
+    b,
+    err;
+
+  for (; i < l; i++) {
+    n = join.apply(
+      null,
+      opts.try[i].map(function(p) {
+        return opts[p] || p;
+      })
+    );
+    tries.push(n);
+    try {
+      b = opts.path ? requireFunc.resolve(n) : requireFunc(n);
+      if (!opts.path) {
+        b.path = n;
+      }
+      return b;
+    } catch (e) {
+      if (e.code !== 'MODULE_NOT_FOUND' &&
+          e.code !== 'QUALIFIED_PATH_RESOLUTION_FAILED' &&
+          !/not find/i.test(e.message)) {
+        throw e;
+      }
+    }
+  }
+
+  err = new Error(
+    'Could not locate the bindings file. Tried:\n' +
+      tries
+        .map(function(a) {
+          return opts.arrow + a;
+        })
+        .join('\n')
+  );
+  err.tries = tries;
+  throw err;
+}
+module.exports = exports = bindings;
+
+/**
+ * Gets the filename of the JavaScript file that invokes this function.
+ * Used to help find the root directory of a module.
+ * Optionally accepts an filename argument to skip when searching for the invoking filename
+ */
+
+exports.getFileName = function getFileName(calling_file) {
+  var origPST = Error.prepareStackTrace,
+    origSTL = Error.stackTraceLimit,
+    dummy = {},
+    fileName;
+
+  Error.stackTraceLimit = 10;
+
+  Error.prepareStackTrace = function(e, st) {
+    for (var i = 0, l = st.length; i < l; i++) {
+      fileName = st[i].getFileName();
+      if (fileName !== __filename) {
+        if (calling_file) {
+          if (fileName !== calling_file) {
+            return;
+          }
+        } else {
+          return;
+        }
+      }
+    }
+  };
+
+  // run the 'prepareStackTrace' function above
+  Error.captureStackTrace(dummy);
+  dummy.stack;
+
+  // cleanup
+  Error.prepareStackTrace = origPST;
+  Error.stackTraceLimit = origSTL;
+
+  // handle filename that starts with "file://"
+  var fileSchema = 'file://';
+  if (fileName.indexOf(fileSchema) === 0) {
+    fileName = fileURLToPath(fileName);
+  }
+
+  return fileName;
+};
+
+/**
+ * Gets the root directory of a module, given an arbitrary filename
+ * somewhere in the module tree. The "root directory" is the directory
+ * containing the `package.json` file.
+ *
+ *   In:  /home/nate/node-native-module/lib/index.js
+ *   Out: /home/nate/node-native-module
+ */
+
+exports.getRoot = function getRoot(file) {
+  var dir = dirname(file),
+    prev;
+  while (true) {
+    if (dir === '.') {
+      // Avoids an infinite loop in rare cases, like the REPL
+      dir = process.cwd();
+    }
+    if (
+      exists(join(dir, 'package.json')) ||
+      exists(join(dir, 'node_modules'))
+    ) {
+      // Found the 'package.json' file or 'node_modules' dir; we're done
+      return dir;
+    }
+    if (prev === dir) {
+      // Got to the top
+      throw new Error(
+        'Could not find module root given file: "' +
+          file +
+          '". Do you have a `package.json` file? '
+      );
+    }
+    // Try the parent dir next
+    prev = dir;
+    dir = join(dir, '..');
+  }
+};
+
+},
+"mfthy3im14t6X8C5rCZK1YJyr0i+S8UL/blIsTQuMpI=":
+function (require, module, exports, __dirname, __filename) {
+'use strict'
+module.exports = require('./client')
+
+},
+"o+w5yxsBUAN7YU9TURngynJtL7CrEHeDiIo22OKkZrM=":
+function (require, module, exports, __dirname, __filename) {
+'use strict'
+
+var DATE_TIME = /(\d{1,})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(\.\d{1,})?.*?( BC)?$/
+var DATE = /^(\d{1,})-(\d{2})-(\d{2})( BC)?$/
+var TIME_ZONE = /([Z+-])(\d{2})?:?(\d{2})?:?(\d{2})?/
+var INFINITY = /^-?infinity$/
+
+module.exports = function parseDate (isoDate) {
+  if (INFINITY.test(isoDate)) {
+    // Capitalize to Infinity before passing to Number
+    return Number(isoDate.replace('i', 'I'))
+  }
+  var matches = DATE_TIME.exec(isoDate)
+
+  if (!matches) {
+    // Force YYYY-MM-DD dates to be parsed as local time
+    return getDate(isoDate) || null
+  }
+
+  var isBC = !!matches[8]
+  var year = parseInt(matches[1], 10)
+  if (isBC) {
+    year = bcYearToNegativeYear(year)
+  }
+
+  var month = parseInt(matches[2], 10) - 1
+  var day = matches[3]
+  var hour = parseInt(matches[4], 10)
+  var minute = parseInt(matches[5], 10)
+  var second = parseInt(matches[6], 10)
+
+  var ms = matches[7]
+  ms = ms ? 1000 * parseFloat(ms) : 0
+
+  var date
+  var offset = timeZoneOffset(isoDate)
+  if (offset != null) {
+    date = new Date(Date.UTC(year, month, day, hour, minute, second, ms))
+
+    // Account for years from 0 to 99 being interpreted as 1900-1999
+    // by Date.UTC / the multi-argument form of the Date constructor
+    if (is0To99(year)) {
+      date.setUTCFullYear(year)
+    }
+
+    date.setTime(date.getTime() - offset)
+  } else {
+    date = new Date(year, month, day, hour, minute, second, ms)
+
+    if (is0To99(year)) {
+      date.setFullYear(year)
+    }
+  }
+
+  return date
+}
+
+function getDate (isoDate) {
+  var matches = DATE.exec(isoDate)
+  if (!matches) {
+    return
+  }
+
+  var year = parseInt(matches[1], 10)
+  var isBC = !!matches[4]
+  if (isBC) {
+    year = bcYearToNegativeYear(year)
+  }
+
+  var month = parseInt(matches[2], 10) - 1
+  var day = matches[3]
+  // YYYY-MM-DD will be parsed as local time
+  var date = new Date(year, month, day)
+
+  if (is0To99(year)) {
+    date.setFullYear(year)
+  }
+
+  return date
+}
+
+// match timezones:
+// Z (UTC)
+// -05
+// +06:30
+function timeZoneOffset (isoDate) {
+  var zone = TIME_ZONE.exec(isoDate.split(' ')[1])
+  if (!zone) return
+  var type = zone[1]
+
+  if (type === 'Z') {
+    return 0
+  }
+  var sign = type === '-' ? -1 : 1
+  var offset = parseInt(zone[2], 10) * 3600 +
+    parseInt(zone[3] || 0, 10) * 60 +
+    parseInt(zone[4] || 0, 10)
+
+  return offset * sign * 1000
+}
+
+function bcYearToNegativeYear (year) {
+  // Account for numerical difference between representations of BC years
+  // See: https://github.com/bendrucker/postgres-date/issues/5
+  return -(year - 1)
+}
+
+function is0To99 (num) {
+  return num >= 0 && num < 100
+}
+
+},
+"pxUwCL/NaJJErBzfOJVnSSyfoCILL5oPs+x0yEQzx0k=":
+function (require, module, exports, __dirname, __filename) {
+var PQ = module.exports = require('bindings')('addon.node').PQ;
+
+//print out the include dir
+//if you want to include this in a binding.gyp file
+if(!module.parent) {
+  var path = require('path');
+  console.log(path.normalize(__dirname + '/src'));
+}
+
+var EventEmitter = require('events').EventEmitter;
+var assert = require('assert');
+
+for(var key in EventEmitter.prototype) {
+  PQ.prototype[key] = EventEmitter.prototype[key];
+}
+
+//SYNC connects to the server
+//throws an exception in the event of a connection error
+PQ.prototype.connectSync = function(paramString) {
+  this.connected = true;
+  if(!paramString) {
+    paramString = '';
+  }
+  var connected = this.$connectSync(paramString);
+  if(!connected) {
+    var err = new Error(this.errorMessage());
+    this.finish();
+    throw err;
+  }
+};
+
+//connects async using a background thread
+//calls the callback with an error if there was one
+PQ.prototype.connect = function(paramString, cb) {
+  this.connected = true;
+  if(typeof paramString == 'function') {
+    cb = paramString;
+    paramString = '';
+  }
+  if(!paramString) {
+    paramString = '';
+  }
+  assert(cb, 'Must provide a connection callback');
+  if(process.domain) {
+    cb = process.domain.bind(cb);
+  }
+  this.$connect(paramString, cb);
+};
+
+PQ.prototype.errorMessage = function() {
+  return this.$getLastErrorMessage();
+};
+
+//returns an int for the fd of the socket
+PQ.prototype.socket = function() {
+  return this.$socket();
+};
+
+// return server version number e.g. 90300
+PQ.prototype.serverVersion = function () {
+  return this.$serverVersion();
+};
+
+//finishes the connection & closes it
+PQ.prototype.finish = function() {
+  this.connected = false;
+  this.$finish();
+};
+
+////SYNC executes a plain text query
+//immediately stores the results within the PQ object for consumption with
+//ntuples, getvalue, etc...
+//returns false if there was an error
+//consume additional error details via PQ#errorMessage & friends
+PQ.prototype.exec = function(commandText) {
+  if(!commandText) {
+    commandText = '';
+  }
+  this.$exec(commandText);
+};
+
+//SYNC executes a query with parameters
+//immediately stores the results within the PQ object for consumption with
+//ntuples, getvalue, etc...
+//returns false if there was an error
+//consume additional error details via PQ#errorMessage & friends
+PQ.prototype.execParams = function(commandText, parameters) {
+  if(!commandText) {
+    commandText = '';
+  }
+  if(!parameters) {
+    parameters = [];
+  }
+  this.$execParams(commandText, parameters);
+};
+
+//SYNC prepares a named query and stores the result
+//immediately stores the results within the PQ object for consumption with
+//ntuples, getvalue, etc...
+//returns false if there was an error
+//consume additional error details via PQ#errorMessage & friends
+PQ.prototype.prepare = function(statementName, commandText, nParams) {
+  assert.equal(arguments.length, 3, 'Must supply 3 arguments');
+  if(!statementName) {
+    statementName = '';
+  }
+  if(!commandText) {
+    commandText = '';
+  }
+  nParams = Number(nParams) || 0;
+  this.$prepare(statementName, commandText, nParams);
+};
+
+//SYNC executes a named, prepared query and stores the result
+//immediately stores the results within the PQ object for consumption with
+//ntuples, getvalue, etc...
+//returns false if there was an error
+//consume additional error details via PQ#errorMessage & friends
+PQ.prototype.execPrepared = function(statementName, parameters) {
+  if(!statementName) {
+    statementName = '';
+  }
+  if(!parameters) {
+    parameters = [];
+  }
+  this.$execPrepared(statementName, parameters);
+};
+
+//send a command to begin executing a query in async mode
+//returns true if sent, or false if there was a send failure
+PQ.prototype.sendQuery = function(commandText) {
+  if(!commandText) {
+    commandText = '';
+  }
+  return this.$sendQuery(commandText);
+};
+
+//send a command to begin executing a query with parameters in async mode
+//returns true if sent, or false if there was a send failure
+PQ.prototype.sendQueryParams = function(commandText, parameters) {
+  if(!commandText) {
+    commandText = '';
+  }
+  if(!parameters) {
+    parameters = [];
+  }
+  return this.$sendQueryParams(commandText, parameters);
+};
+
+//send a command to prepare a named query in async mode
+//returns true if sent, or false if there was a send failure
+PQ.prototype.sendPrepare = function(statementName, commandText, nParams) {
+  assert.equal(arguments.length, 3, 'Must supply 3 arguments');
+  if(!statementName) {
+    statementName = '';
+  }
+  if(!commandText) {
+    commandText = '';
+  }
+  nParams = Number(nParams) || 0;
+  return this.$sendPrepare(statementName, commandText, nParams);
+};
+
+//send a command to execute a named query in async mode
+//returns true if sent, or false if there was a send failure
+PQ.prototype.sendQueryPrepared = function(statementName, parameters) {
+  if(!statementName) {
+    statementName = '';
+  }
+  if(!parameters) {
+    parameters = [];
+  }
+  return this.$sendQueryPrepared(statementName, parameters);
+};
+
+//'pops' a result out of the buffered
+//response data read during async command execution
+//and stores it on the c/c++ object so you can consume
+//the data from it.  returns true if there was a pending result
+//or false if there was no pending result. if there was no pending result
+//the last found result is not overwritten so you can call getResult as many
+//times as you want, and you'll always have the last available result for consumption
+PQ.prototype.getResult = function() {
+  return this.$getResult();
+};
+
+//returns a text of the enum associated with the result
+//usually just PGRES_COMMAND_OK or PGRES_FATAL_ERROR
+PQ.prototype.resultStatus = function() {
+  return this.$resultStatus();
+};
+
+PQ.prototype.resultErrorMessage = function() {
+  return this.$resultErrorMessage();
+};
+
+PQ.prototype.resultErrorFields = function() {
+  return this.$resultErrorFields();
+};
+
+//free the memory associated with a result
+//this is somewhat handled for you within the c/c++ code
+//by never allowing the code to 'leak' a result. still,
+//if you absolutely want to free it yourself, you can use this.
+PQ.prototype.clear = function() {
+  this.$clear();
+};
+
+//returns the number of tuples (rows) in the result set
+PQ.prototype.ntuples = function() {
+  return this.$ntuples();
+};
+
+//returns the number of fields (columns) in the result set
+PQ.prototype.nfields = function() {
+  return this.$nfields();
+};
+
+//returns the name of the field (column) at the given offset
+PQ.prototype.fname = function(offset) {
+  return this.$fname(offset);
+};
+
+//returns the Oid of the type for the given field
+PQ.prototype.ftype = function(offset) {
+  return this.$ftype(offset);
+};
+
+//returns a text value at the given row/col
+//if the value is null this still returns empty string
+//so you need to use PQ#getisnull to determine
+PQ.prototype.getvalue = function(row, col) {
+  return this.$getvalue(row, col);
+};
+
+//returns true/false if the value is null
+PQ.prototype.getisnull = function(row, col) {
+  return this.$getisnull(row, col);
+};
+
+//returns the status of the command
+PQ.prototype.cmdStatus = function() {
+  return this.$cmdStatus();
+};
+
+//returns the tuples in the command
+PQ.prototype.cmdTuples = function() {
+  return this.$cmdTuples();
+};
+
+//starts the 'read ready' libuv socket listener.
+//Once the socket becomes readable, the PQ instance starts
+//emitting 'readable' events.  Similar to how node's readable-stream
+//works except to clear the SELECT() notification you need to call
+//PQ#consumeInput instead of letting node pull the data off the socket
+//http://www.postgresql.org/docs/9.1/static/libpq-async.html
+PQ.prototype.startReader = function() {
+  assert(this.connected, 'Must be connected to start reader');
+  this.$startRead();
+};
+
+//suspends the libuv socket 'read ready' listener
+PQ.prototype.stopReader = function() {
+  this.$stopRead();
+};
+
+PQ.prototype.writable = function(cb) {
+  assert(this.connected, 'Must be connected to start writer');
+  this.$startWrite();
+  return this.once('writable', cb);
+};
+
+//returns boolean - false indicates an error condition
+//e.g. a failure to consume input
+PQ.prototype.consumeInput = function() {
+  return this.$consumeInput();
+};
+
+//returns true if PQ#getResult would cause
+//the process to block waiting on results
+//false indicates PQ#getResult can be called
+//with an assurance of not blocking
+PQ.prototype.isBusy = function() {
+  return this.$isBusy();
+};
+
+//toggles the socket blocking on outgoing writes
+PQ.prototype.setNonBlocking = function(truthy) {
+  return this.$setNonBlocking(truthy ? 1 : 0);
+};
+
+//returns true if the connection is non-blocking on writes, otherwise false
+//note: connection is always non-blocking on reads if using the send* methods
+PQ.prototype.isNonBlocking = function() {
+  return this.$isNonBlocking();
+};
+
+//returns 1 if socket is not write-ready
+//returns 0 if all data flushed to socket
+//returns -1 if there is an error
+PQ.prototype.flush = function() {
+  return this.$flush();
+};
+
+//escapes a literal and returns the escaped string
+//I'm not 100% sure this doesn't do any I/O...need to check that
+PQ.prototype.escapeLiteral = function(input) {
+  if(!input) return input;
+  return this.$escapeLiteral(input);
+};
+
+PQ.prototype.escapeIdentifier = function(input) {
+  if(!input) return input;
+  return this.$escapeIdentifier(input);
+};
+
+//Checks for any notifications which may have arrivied
+//and returns them as a javascript object: {relname: 'string', extra: 'string', be_pid: int}
+//if there are no pending notifications this returns undefined
+PQ.prototype.notifies = function() {
+  return this.$notifies();
+};
+
+//Sends a buffer of binary data to the server
+//returns 1 if the command was sent successfully
+//returns 0 if the command would block (use PQ#writable here if so)
+//returns -1 if there was an error
+PQ.prototype.putCopyData = function(buffer) {
+  assert(buffer instanceof Buffer);
+  return this.$putCopyData(buffer);
+};
+
+//Sends a command to 'finish' the copy
+//if an error message is passed, it will be sent to the
+//backend and signal a request to cancel the copy in
+//returns 1 if sent succesfully
+//returns 0 if the command would block
+//returns -1 if there was an error
+PQ.prototype.putCopyEnd = function(errorMessage) {
+  if(errorMessage) {
+    return this.$putCopyEnd(errorMessage);
+  }
+  return this.$putCopyEnd();
+};
+
+//Gets a buffer of data from a copy out command
+//if async is passed as true it will not block waiting
+//for the result, otherwise this will BLOCK for a result.
+//returns a buffer if successful
+//returns 0 if copy is still in process (async only)
+//returns -1 if the copy is done
+//returns -2 if there was an error
+PQ.prototype.getCopyData = function(async) {
+  return this.$getCopyData(!!async);
+};
+
+PQ.prototype.cancel = function() {
+  return this.$cancel();
+};
+
+},
+"qffaFyIlqe0KpTmg1FdGSsiUKiEXeLQA9jQMuv99JF8=":
+function (require, module, exports, __dirname, __filename) {
+'use strict'
+/**
+ * Copyright (c) 2010-2017 Brian Carlson (brian.m.carlson@gmail.com)
+ * All rights reserved.
+ *
+ * This source code is licensed under the MIT license found in the
+ * README.md file in the root directory of this source tree.
+ */
+
+const crypto = require('crypto')
+
+const defaults = require('./defaults')
+
+function escapeElement(elementRepresentation) {
+  var escaped = elementRepresentation.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+
+  return '"' + escaped + '"'
+}
+
+// convert a JS array to a postgres array literal
+// uses comma separator so won't work for types like box that use
+// a different array separator.
+function arrayString(val) {
+  var result = '{'
+  for (var i = 0; i < val.length; i++) {
+    if (i > 0) {
+      result = result + ','
+    }
+    if (val[i] === null || typeof val[i] === 'undefined') {
+      result = result + 'NULL'
+    } else if (Array.isArray(val[i])) {
+      result = result + arrayString(val[i])
+    } else if (val[i] instanceof Buffer) {
+      result += '\\\\x' + val[i].toString('hex')
+    } else {
+      result += escapeElement(prepareValue(val[i]))
+    }
+  }
+  result = result + '}'
+  return result
+}
+
+// converts values from javascript types
+// to their 'raw' counterparts for use as a postgres parameter
+// note: you can override this function to provide your own conversion mechanism
+// for complex types, etc...
+var prepareValue = function (val, seen) {
+  if (val instanceof Buffer) {
+    return val
+  }
+  if (ArrayBuffer.isView(val)) {
+    var buf = Buffer.from(val.buffer, val.byteOffset, val.byteLength)
+    if (buf.length === val.byteLength) {
+      return buf
+    }
+    return buf.slice(val.byteOffset, val.byteOffset + val.byteLength) // Node.js v4 does not support those Buffer.from params
+  }
+  if (val instanceof Date) {
+    if (defaults.parseInputDatesAsUTC) {
+      return dateToStringUTC(val)
+    } else {
+      return dateToString(val)
+    }
+  }
+  if (Array.isArray(val)) {
+    return arrayString(val)
+  }
+  if (val === null || typeof val === 'undefined') {
+    return null
+  }
+  if (typeof val === 'object') {
+    return prepareObject(val, seen)
+  }
+  return val.toString()
+}
+
+function prepareObject(val, seen) {
+  if (val && typeof val.toPostgres === 'function') {
+    seen = seen || []
+    if (seen.indexOf(val) !== -1) {
+      throw new Error('circular reference detected while preparing "' + val + '" for query')
+    }
+    seen.push(val)
+
+    return prepareValue(val.toPostgres(prepareValue), seen)
+  }
+  return JSON.stringify(val)
+}
+
+function pad(number, digits) {
+  number = '' + number
+  while (number.length < digits) {
+    number = '0' + number
+  }
+  return number
+}
+
+function dateToString(date) {
+  var offset = -date.getTimezoneOffset()
+
+  var year = date.getFullYear()
+  var isBCYear = year < 1
+  if (isBCYear) year = Math.abs(year) + 1 // negative years are 1 off their BC representation
+
+  var ret =
+    pad(year, 4) +
+    '-' +
+    pad(date.getMonth() + 1, 2) +
+    '-' +
+    pad(date.getDate(), 2) +
+    'T' +
+    pad(date.getHours(), 2) +
+    ':' +
+    pad(date.getMinutes(), 2) +
+    ':' +
+    pad(date.getSeconds(), 2) +
+    '.' +
+    pad(date.getMilliseconds(), 3)
+
+  if (offset < 0) {
+    ret += '-'
+    offset *= -1
+  } else {
+    ret += '+'
+  }
+
+  ret += pad(Math.floor(offset / 60), 2) + ':' + pad(offset % 60, 2)
+  if (isBCYear) ret += ' BC'
+  return ret
+}
+
+function dateToStringUTC(date) {
+  var year = date.getUTCFullYear()
+  var isBCYear = year < 1
+  if (isBCYear) year = Math.abs(year) + 1 // negative years are 1 off their BC representation
+
+  var ret =
+    pad(year, 4) +
+    '-' +
+    pad(date.getUTCMonth() + 1, 2) +
+    '-' +
+    pad(date.getUTCDate(), 2) +
+    'T' +
+    pad(date.getUTCHours(), 2) +
+    ':' +
+    pad(date.getUTCMinutes(), 2) +
+    ':' +
+    pad(date.getUTCSeconds(), 2) +
+    '.' +
+    pad(date.getUTCMilliseconds(), 3)
+
+  ret += '+00:00'
+  if (isBCYear) ret += ' BC'
+  return ret
+}
+
+function normalizeQueryConfig(config, values, callback) {
+  // can take in strings or config objects
+  config = typeof config === 'string' ? { text: config } : config
+  if (values) {
+    if (typeof values === 'function') {
+      config.callback = values
+    } else {
+      config.values = values
+    }
+  }
+  if (callback) {
+    config.callback = callback
+  }
+  return config
+}
+
+const md5 = function (string) {
+  return crypto.createHash('md5').update(string, 'utf-8').digest('hex')
+}
+
+// See AuthenticationMD5Password at https://www.postgresql.org/docs/current/static/protocol-flow.html
+const postgresMd5PasswordHash = function (user, password, salt) {
+  var inner = md5(password + user)
+  var outer = md5(Buffer.concat([Buffer.from(inner), salt]))
+  return 'md5' + outer
+}
+
+module.exports = {
+  prepareValue: function prepareValueWrapper(value) {
+    // this ensures that extra arguments do not get passed into prepareValue
+    // by accident, eg: from calling values.map(utils.prepareValue)
+    return prepareValue(value)
+  },
+  normalizeQueryConfig,
+  postgresMd5PasswordHash,
+  md5,
+}
+
+},
+"tVVxm6d79sgDfESoEEFzAHFlVTJ5ohQ7WnNmlFl8BuA=":
+function (require, module, exports, __dirname, __filename) {
+'use strict'
+
+module.exports = function parseBytea (input) {
+  if (/^\\x/.test(input)) {
+    // new 'hex' style response (pg >9.0)
+    return new Buffer(input.substr(2), 'hex')
+  }
+  var output = ''
+  var i = 0
+  while (i < input.length) {
+    if (input[i] !== '\\') {
+      output += input[i]
+      ++i
+    } else {
+      if (/[0-7]{3}/.test(input.substr(i + 1, 3))) {
+        output += String.fromCharCode(parseInt(input.substr(i + 1, 3), 8))
+        i += 4
+      } else {
+        var backslashes = 1
+        while (i + backslashes < input.length && input[i + backslashes] === '\\') {
+          backslashes++
+        }
+        for (var k = 0; k < Math.floor(backslashes / 2); ++k) {
+          output += '\\'
+        }
+        i += Math.floor(backslashes / 2) * 2
+      }
+    }
+  }
+  return new Buffer(output, 'binary')
+}
+
+},
+"uGW+o3LS/8tJQqFwXtORD0j410qEDsQMVUhRUFMraPo=":
+function (require, module, exports, __dirname, __filename) {
+'use strict'
+/**
+ * Copyright (c) 2010-2017 Brian Carlson (brian.m.carlson@gmail.com)
+ * All rights reserved.
+ *
+ * This source code is licensed under the MIT license found in the
+ * README.md file in the root directory of this source tree.
+ */
+
+module.exports = {
+  // database host. defaults to localhost
+  host: 'localhost',
+
+  // database user's name
+  user: process.platform === 'win32' ? process.env.USERNAME : process.env.USER,
+
+  // name of database to connect
+  database: undefined,
+
+  // database user's password
+  password: null,
+
+  // a Postgres connection string to be used instead of setting individual connection items
+  // NOTE:  Setting this value will cause it to override any other value (such as database or user) defined
+  // in the defaults object.
+  connectionString: undefined,
+
+  // database port
+  port: 5432,
+
+  // number of rows to return at a time from a prepared statement's
+  // portal. 0 will return all rows at once
+  rows: 0,
+
+  // binary result mode
+  binary: false,
+
+  // Connection pool options - see https://github.com/brianc/node-pg-pool
+
+  // number of connections to use in connection pool
+  // 0 will disable connection pooling
+  max: 10,
+
+  // max milliseconds a client can go unused before it is removed
+  // from the pool and destroyed
+  idleTimeoutMillis: 30000,
+
+  client_encoding: '',
+
+  ssl: false,
+
+  application_name: undefined,
+
+  fallback_application_name: undefined,
+
+  options: undefined,
+
+  parseInputDatesAsUTC: false,
+
+  // max milliseconds any query using this connection will execute for before timing out in error.
+  // false=unlimited
+  statement_timeout: false,
+
+  // Terminate any session with an open transaction that has been idle for longer than the specified duration in milliseconds
+  // false=unlimited
+  idle_in_transaction_session_timeout: false,
+
+  // max milliseconds to wait for query to complete (client side)
+  query_timeout: false,
+
+  connect_timeout: 0,
+
+  keepalives: 1,
+
+  keepalives_idle: 0,
+}
+
+var pgTypes = require('pg-types')
+// save default parsers
+var parseBigInteger = pgTypes.getTypeParser(20, 'text')
+var parseBigIntegerArray = pgTypes.getTypeParser(1016, 'text')
+
+// parse int8 so you can get your count values as actual numbers
+module.exports.__defineSetter__('parseInt8', function (val) {
+  pgTypes.setTypeParser(20, 'text', val ? pgTypes.getTypeParser(23, 'text') : parseBigInteger)
+  pgTypes.setTypeParser(1016, 'text', val ? pgTypes.getTypeParser(1007, 'text') : parseBigIntegerArray)
+})
+
+},
+"vYEaUwAAUItrkMHbRiB44SLwQEdp1z9XrUH+kKyhWb0=":
+function (require, module, exports, __dirname, __filename) {
+var array = require('postgres-array')
+var arrayParser = require('./arrayParser');
+var parseDate = require('postgres-date');
+var parseInterval = require('postgres-interval');
+var parseByteA = require('postgres-bytea');
+
+function allowNull (fn) {
+  return function nullAllowed (value) {
+    if (value === null) return value
+    return fn(value)
+  }
+}
+
+function parseBool (value) {
+  if (value === null) return value
+  return value === 'TRUE' ||
+    value === 't' ||
+    value === 'true' ||
+    value === 'y' ||
+    value === 'yes' ||
+    value === 'on' ||
+    value === '1';
+}
+
+function parseBoolArray (value) {
+  if (!value) return null
+  return array.parse(value, parseBool)
+}
+
+function parseBaseTenInt (string) {
+  return parseInt(string, 10)
+}
+
+function parseIntegerArray (value) {
+  if (!value) return null
+  return array.parse(value, allowNull(parseBaseTenInt))
+}
+
+function parseBigIntegerArray (value) {
+  if (!value) return null
+  return array.parse(value, allowNull(function (entry) {
+    return parseBigInteger(entry).trim()
+  }))
+}
+
+var parsePointArray = function(value) {
+  if(!value) { return null; }
+  var p = arrayParser.create(value, function(entry) {
+    if(entry !== null) {
+      entry = parsePoint(entry);
+    }
+    return entry;
+  });
+
+  return p.parse();
+};
+
+var parseFloatArray = function(value) {
+  if(!value) { return null; }
+  var p = arrayParser.create(value, function(entry) {
+    if(entry !== null) {
+      entry = parseFloat(entry);
+    }
+    return entry;
+  });
+
+  return p.parse();
+};
+
+var parseStringArray = function(value) {
+  if(!value) { return null; }
+
+  var p = arrayParser.create(value);
+  return p.parse();
+};
+
+var parseDateArray = function(value) {
+  if (!value) { return null; }
+
+  var p = arrayParser.create(value, function(entry) {
+    if (entry !== null) {
+      entry = parseDate(entry);
+    }
+    return entry;
+  });
+
+  return p.parse();
+};
+
+var parseIntervalArray = function(value) {
+  if (!value) { return null; }
+
+  var p = arrayParser.create(value, function(entry) {
+    if (entry !== null) {
+      entry = parseInterval(entry);
+    }
+    return entry;
+  });
+
+  return p.parse();
+};
+
+var parseByteAArray = function(value) {
+  if (!value) { return null; }
+
+  return array.parse(value, allowNull(parseByteA));
+};
+
+var parseInteger = function(value) {
+  return parseInt(value, 10);
+};
+
+var parseBigInteger = function(value) {
+  var valStr = String(value);
+  if (/^\d+$/.test(valStr)) { return valStr; }
+  return value;
+};
+
+var parseJsonArray = function(value) {
+  if (!value) { return null; }
+
+  return array.parse(value, allowNull(JSON.parse));
+};
+
+var parsePoint = function(value) {
+  if (value[0] !== '(') { return null; }
+
+  value = value.substring( 1, value.length - 1 ).split(',');
+
+  return {
+    x: parseFloat(value[0])
+  , y: parseFloat(value[1])
+  };
+};
+
+var parseCircle = function(value) {
+  if (value[0] !== '<' && value[1] !== '(') { return null; }
+
+  var point = '(';
+  var radius = '';
+  var pointParsed = false;
+  for (var i = 2; i < value.length - 1; i++){
+    if (!pointParsed) {
+      point += value[i];
+    }
+
+    if (value[i] === ')') {
+      pointParsed = true;
+      continue;
+    } else if (!pointParsed) {
+      continue;
+    }
+
+    if (value[i] === ','){
+      continue;
+    }
+
+    radius += value[i];
+  }
+  var result = parsePoint(point);
+  result.radius = parseFloat(radius);
+
+  return result;
+};
+
+var init = function(register) {
+  register(20, parseBigInteger); // int8
+  register(21, parseInteger); // int2
+  register(23, parseInteger); // int4
+  register(26, parseInteger); // oid
+  register(700, parseFloat); // float4/real
+  register(701, parseFloat); // float8/double
+  register(16, parseBool);
+  register(1082, parseDate); // date
+  register(1114, parseDate); // timestamp without timezone
+  register(1184, parseDate); // timestamp
+  register(600, parsePoint); // point
+  register(651, parseStringArray); // cidr[]
+  register(718, parseCircle); // circle
+  register(1000, parseBoolArray);
+  register(1001, parseByteAArray);
+  register(1005, parseIntegerArray); // _int2
+  register(1007, parseIntegerArray); // _int4
+  register(1028, parseIntegerArray); // oid[]
+  register(1016, parseBigIntegerArray); // _int8
+  register(1017, parsePointArray); // point[]
+  register(1021, parseFloatArray); // _float4
+  register(1022, parseFloatArray); // _float8
+  register(1231, parseFloatArray); // _numeric
+  register(1014, parseStringArray); //char
+  register(1015, parseStringArray); //varchar
+  register(1008, parseStringArray);
+  register(1009, parseStringArray);
+  register(1040, parseStringArray); // macaddr[]
+  register(1041, parseStringArray); // inet[]
+  register(1115, parseDateArray); // timestamp without time zone[]
+  register(1182, parseDateArray); // _date
+  register(1185, parseDateArray); // timestamp with time zone[]
+  register(1186, parseInterval);
+  register(1187, parseIntervalArray);
+  register(17, parseByteA);
+  register(114, JSON.parse.bind(JSON)); // json
+  register(3802, JSON.parse.bind(JSON)); // jsonb
+  register(199, parseJsonArray); // json[]
+  register(3807, parseJsonArray); // jsonb[]
+  register(3907, parseStringArray); // numrange[]
+  register(2951, parseStringArray); // uuid[]
+  register(791, parseStringArray); // money[]
+  register(1183, parseStringArray); // time[]
+  register(1270, parseStringArray); // timetz[]
+};
+
+module.exports = {
+  init: init
+};
+
+},
+"wBhZd/SmfCxgNPnFSC8c+EQ7vGQcQ+b22yJ7QBe0XCw=":
 function (require, module, exports, __dirname, __filename) {
 // Generated by purs bundle 0.13.8
 var PS = {};
@@ -6992,15 +8487,6 @@ var PS = {};
   };                                                 
   var showInt = new Show($foreign.showIntImpl);
   var showChar = new Show($foreign.showCharImpl);
-  var showBoolean = new Show(function (v) {
-      if (v) {
-          return "true";
-      };
-      if (!v) {
-          return "false";
-      };
-      throw new Error("Failed pattern match at Data.Show (line 20, column 1 - line 22, column 23): " + [ v.constructor.name ]);
-  });
   var show = function (dict) {
       return dict.show;
   };
@@ -7023,7 +8509,6 @@ var PS = {};
   };
   exports["Show"] = Show;
   exports["show"] = show;
-  exports["showBoolean"] = showBoolean;
   exports["showInt"] = showInt;
   exports["showChar"] = showChar;
   exports["showString"] = showString;
@@ -8047,8 +9532,7 @@ var PS = {};
   var Data_Bifunctor = $PS["Data.Bifunctor"];
   var Data_Function = $PS["Data.Function"];
   var Data_Functor = $PS["Data.Functor"];
-  var Data_Maybe = $PS["Data.Maybe"];
-  var Data_Show = $PS["Data.Show"];                
+  var Data_Maybe = $PS["Data.Maybe"];              
   var Left = (function () {
       function Left(value0) {
           this.value0 = value0;
@@ -8067,19 +9551,6 @@ var PS = {};
       };
       return Right;
   })();
-  var showEither = function (dictShow) {
-      return function (dictShow1) {
-          return new Data_Show.Show(function (v) {
-              if (v instanceof Left) {
-                  return "(Left " + (Data_Show.show(dictShow)(v.value0) + ")");
-              };
-              if (v instanceof Right) {
-                  return "(Right " + (Data_Show.show(dictShow1)(v.value0) + ")");
-              };
-              throw new Error("Failed pattern match at Data.Either (line 163, column 1 - line 165, column 46): " + [ v.constructor.name ]);
-          });
-      };
-  };
   var note = function (a) {
       return Data_Maybe.maybe(new Left(a))(Right.create);
   };
@@ -8173,7 +9644,6 @@ var PS = {};
   exports["applicativeEither"] = applicativeEither;
   exports["bindEither"] = bindEither;
   exports["monadEither"] = monadEither;
-  exports["showEither"] = showEither;
 })(PS);
 (function($PS) {
   // Generated by purs version 0.13.8
@@ -12605,9 +14075,6 @@ var PS = {};
       December.value = new December();
       return December;
   })();
-  var showYear = new Data_Show.Show(function (v) {
-      return "(Year " + (Data_Show.show(Data_Show.showInt)(v) + ")");
-  });
   var showWeekday = new Data_Show.Show(function (v) {
       if (v instanceof Monday) {
           return "Monday";
@@ -12670,9 +14137,6 @@ var PS = {};
           return "December";
       };
       throw new Error("Failed pattern match at Data.Date.Component (line 101, column 1 - line 113, column 29): " + [ v.constructor.name ]);
-  });
-  var showDay = new Data_Show.Show(function (v) {
-      return "(Day " + (Data_Show.show(Data_Show.showInt)(v) + ")");
   });
   var ordYear = Data_Ord.ordInt;
   var ordDay = Data_Ord.ordInt;
@@ -13179,11 +14643,9 @@ var PS = {};
   exports["November"] = November;
   exports["December"] = December;
   exports["boundedEnumYear"] = boundedEnumYear;
-  exports["showYear"] = showYear;
   exports["boundedEnumMonth"] = boundedEnumMonth;
   exports["showMonth"] = showMonth;
   exports["boundedEnumDay"] = boundedEnumDay;
-  exports["showDay"] = showDay;
   exports["boundedEnumWeekday"] = boundedEnumWeekday;
   exports["showWeekday"] = showWeekday;
 })(PS);
@@ -13196,7 +14658,6 @@ var PS = {};
   var Data_Date_Component = $PS["Data.Date.Component"];
   var Data_Enum = $PS["Data.Enum"];
   var Data_Maybe = $PS["Data.Maybe"];
-  var Data_Show = $PS["Data.Show"];
   var year = function (v) {
       return v.value0;
   };
@@ -13207,10 +14668,7 @@ var PS = {};
           return Data_Maybe.fromJust()(Data_Enum.toEnum(Data_Date_Component.boundedEnumWeekday)(7));
       };
       return Data_Maybe.fromJust()(Data_Enum.toEnum(Data_Date_Component.boundedEnumWeekday)(n));
-  };
-  var showDate = new Data_Show.Show(function (v) {
-      return "(Date " + (Data_Show.show(Data_Date_Component.showYear)(v.value0) + (" " + (Data_Show.show(Data_Date_Component.showMonth)(v.value1) + (" " + (Data_Show.show(Data_Date_Component.showDay)(v.value2) + ")")))));
-  });
+  }; 
   var month = function (v) {
       return v.value1;
   };
@@ -13221,7 +14679,6 @@ var PS = {};
   exports["month"] = month;
   exports["day"] = day;
   exports["weekday"] = weekday;
-  exports["showDate"] = showDate;
 })(PS);
 (function(exports) {
   "use strict";
@@ -13241,197 +14698,8 @@ var PS = {};
 (function($PS) {
   // Generated by purs version 0.13.8
   "use strict";
-  $PS["Data.Time.Component"] = $PS["Data.Time.Component"] || {};
-  var exports = $PS["Data.Time.Component"];
-  var Data_Boolean = $PS["Data.Boolean"];
-  var Data_Bounded = $PS["Data.Bounded"];
-  var Data_Enum = $PS["Data.Enum"];
-  var Data_Maybe = $PS["Data.Maybe"];
-  var Data_Ord = $PS["Data.Ord"];
-  var Data_Show = $PS["Data.Show"];
-  var showSecond = new Data_Show.Show(function (v) {
-      return "(Second " + (Data_Show.show(Data_Show.showInt)(v) + ")");
-  });
-  var showMinute = new Data_Show.Show(function (v) {
-      return "(Minute " + (Data_Show.show(Data_Show.showInt)(v) + ")");
-  });
-  var showMillisecond = new Data_Show.Show(function (v) {
-      return "(Millisecond " + (Data_Show.show(Data_Show.showInt)(v) + ")");
-  });
-  var showHour = new Data_Show.Show(function (v) {
-      return "(Hour " + (Data_Show.show(Data_Show.showInt)(v) + ")");
-  });
-  var ordSecond = Data_Ord.ordInt;
-  var ordMinute = Data_Ord.ordInt;
-  var ordMillisecond = Data_Ord.ordInt;
-  var ordHour = Data_Ord.ordInt;
-  var boundedSecond = new Data_Bounded.Bounded(function () {
-      return ordSecond;
-  }, 0, 59);
-  var boundedMinute = new Data_Bounded.Bounded(function () {
-      return ordMinute;
-  }, 0, 59);
-  var boundedMillisecond = new Data_Bounded.Bounded(function () {
-      return ordMillisecond;
-  }, 0, 999);
-  var boundedHour = new Data_Bounded.Bounded(function () {
-      return ordHour;
-  }, 0, 23);
-  var boundedEnumSecond = new Data_Enum.BoundedEnum(function () {
-      return boundedSecond;
-  }, function () {
-      return enumSecond;
-  }, 60, function (v) {
-      return v;
-  }, function (n) {
-      if (n >= 0 && n <= 59) {
-          return new Data_Maybe.Just(n);
-      };
-      if (Data_Boolean.otherwise) {
-          return Data_Maybe.Nothing.value;
-      };
-      throw new Error("Failed pattern match at Data.Time.Component (line 90, column 1 - line 95, column 26): " + [ n.constructor.name ]);
-  });
-  var enumSecond = new Data_Enum.Enum(function () {
-      return ordSecond;
-  }, (function () {
-      var $28 = Data_Enum.toEnum(boundedEnumSecond);
-      var $29 = Data_Enum.fromEnum(boundedEnumSecond);
-      return function ($30) {
-          return $28((function (v) {
-              return v - 1 | 0;
-          })($29($30)));
-      };
-  })(), (function () {
-      var $31 = Data_Enum.toEnum(boundedEnumSecond);
-      var $32 = Data_Enum.fromEnum(boundedEnumSecond);
-      return function ($33) {
-          return $31((function (v) {
-              return v + 1 | 0;
-          })($32($33)));
-      };
-  })());
-  var boundedEnumMinute = new Data_Enum.BoundedEnum(function () {
-      return boundedMinute;
-  }, function () {
-      return enumMinute;
-  }, 60, function (v) {
-      return v;
-  }, function (n) {
-      if (n >= 0 && n <= 59) {
-          return new Data_Maybe.Just(n);
-      };
-      if (Data_Boolean.otherwise) {
-          return Data_Maybe.Nothing.value;
-      };
-      throw new Error("Failed pattern match at Data.Time.Component (line 61, column 1 - line 66, column 26): " + [ n.constructor.name ]);
-  });
-  var enumMinute = new Data_Enum.Enum(function () {
-      return ordMinute;
-  }, (function () {
-      var $34 = Data_Enum.toEnum(boundedEnumMinute);
-      var $35 = Data_Enum.fromEnum(boundedEnumMinute);
-      return function ($36) {
-          return $34((function (v) {
-              return v - 1 | 0;
-          })($35($36)));
-      };
-  })(), (function () {
-      var $37 = Data_Enum.toEnum(boundedEnumMinute);
-      var $38 = Data_Enum.fromEnum(boundedEnumMinute);
-      return function ($39) {
-          return $37((function (v) {
-              return v + 1 | 0;
-          })($38($39)));
-      };
-  })());
-  var boundedEnumMillisecond = new Data_Enum.BoundedEnum(function () {
-      return boundedMillisecond;
-  }, function () {
-      return enumMillisecond;
-  }, 1000, function (v) {
-      return v;
-  }, function (n) {
-      if (n >= 0 && n <= 999) {
-          return new Data_Maybe.Just(n);
-      };
-      if (Data_Boolean.otherwise) {
-          return Data_Maybe.Nothing.value;
-      };
-      throw new Error("Failed pattern match at Data.Time.Component (line 120, column 1 - line 125, column 31): " + [ n.constructor.name ]);
-  });
-  var enumMillisecond = new Data_Enum.Enum(function () {
-      return ordMillisecond;
-  }, (function () {
-      var $40 = Data_Enum.toEnum(boundedEnumMillisecond);
-      var $41 = Data_Enum.fromEnum(boundedEnumMillisecond);
-      return function ($42) {
-          return $40((function (v) {
-              return v - 1 | 0;
-          })($41($42)));
-      };
-  })(), (function () {
-      var $43 = Data_Enum.toEnum(boundedEnumMillisecond);
-      var $44 = Data_Enum.fromEnum(boundedEnumMillisecond);
-      return function ($45) {
-          return $43((function (v) {
-              return v + 1 | 0;
-          })($44($45)));
-      };
-  })());
-  var boundedEnumHour = new Data_Enum.BoundedEnum(function () {
-      return boundedHour;
-  }, function () {
-      return enumHour;
-  }, 24, function (v) {
-      return v;
-  }, function (n) {
-      if (n >= 0 && n <= 23) {
-          return new Data_Maybe.Just(n);
-      };
-      if (Data_Boolean.otherwise) {
-          return Data_Maybe.Nothing.value;
-      };
-      throw new Error("Failed pattern match at Data.Time.Component (line 32, column 1 - line 37, column 24): " + [ n.constructor.name ]);
-  });
-  var enumHour = new Data_Enum.Enum(function () {
-      return ordHour;
-  }, (function () {
-      var $46 = Data_Enum.toEnum(boundedEnumHour);
-      var $47 = Data_Enum.fromEnum(boundedEnumHour);
-      return function ($48) {
-          return $46((function (v) {
-              return v - 1 | 0;
-          })($47($48)));
-      };
-  })(), (function () {
-      var $49 = Data_Enum.toEnum(boundedEnumHour);
-      var $50 = Data_Enum.fromEnum(boundedEnumHour);
-      return function ($51) {
-          return $49((function (v) {
-              return v + 1 | 0;
-          })($50($51)));
-      };
-  })());
-  exports["boundedEnumHour"] = boundedEnumHour;
-  exports["showHour"] = showHour;
-  exports["boundedEnumMinute"] = boundedEnumMinute;
-  exports["showMinute"] = showMinute;
-  exports["boundedEnumSecond"] = boundedEnumSecond;
-  exports["showSecond"] = showSecond;
-  exports["boundedEnumMillisecond"] = boundedEnumMillisecond;
-  exports["showMillisecond"] = showMillisecond;
-})(PS);
-(function($PS) {
-  // Generated by purs version 0.13.8
-  "use strict";
   $PS["Data.Time"] = $PS["Data.Time"] || {};
   var exports = $PS["Data.Time"];
-  var Data_Show = $PS["Data.Show"];
-  var Data_Time_Component = $PS["Data.Time.Component"];
-  var showTime = new Data_Show.Show(function (v) {
-      return "(Time " + (Data_Show.show(Data_Time_Component.showHour)(v.value0) + (" " + (Data_Show.show(Data_Time_Component.showMinute)(v.value1) + (" " + (Data_Show.show(Data_Time_Component.showSecond)(v.value2) + (" " + (Data_Show.show(Data_Time_Component.showMillisecond)(v.value3) + ")")))))));
-  });
   var second = function (v) {
       return v.value2;
   };
@@ -13448,7 +14716,6 @@ var PS = {};
   exports["minute"] = minute;
   exports["second"] = second;
   exports["millisecond"] = millisecond;
-  exports["showTime"] = showTime;
 })(PS);
 (function($PS) {
   // Generated by purs version 0.13.8
@@ -13960,6 +15227,173 @@ var PS = {};
   exports["drop"] = drop;
   exports["showCodePoint"] = showCodePoint;
   exports["boundedEnumCodePoint"] = boundedEnumCodePoint;
+})(PS);
+(function($PS) {
+  // Generated by purs version 0.13.8
+  "use strict";
+  $PS["Data.Time.Component"] = $PS["Data.Time.Component"] || {};
+  var exports = $PS["Data.Time.Component"];
+  var Data_Boolean = $PS["Data.Boolean"];
+  var Data_Bounded = $PS["Data.Bounded"];
+  var Data_Enum = $PS["Data.Enum"];
+  var Data_Maybe = $PS["Data.Maybe"];
+  var Data_Ord = $PS["Data.Ord"];
+  var ordSecond = Data_Ord.ordInt;
+  var ordMinute = Data_Ord.ordInt;
+  var ordMillisecond = Data_Ord.ordInt;
+  var ordHour = Data_Ord.ordInt;
+  var boundedSecond = new Data_Bounded.Bounded(function () {
+      return ordSecond;
+  }, 0, 59);
+  var boundedMinute = new Data_Bounded.Bounded(function () {
+      return ordMinute;
+  }, 0, 59);
+  var boundedMillisecond = new Data_Bounded.Bounded(function () {
+      return ordMillisecond;
+  }, 0, 999);
+  var boundedHour = new Data_Bounded.Bounded(function () {
+      return ordHour;
+  }, 0, 23);
+  var boundedEnumSecond = new Data_Enum.BoundedEnum(function () {
+      return boundedSecond;
+  }, function () {
+      return enumSecond;
+  }, 60, function (v) {
+      return v;
+  }, function (n) {
+      if (n >= 0 && n <= 59) {
+          return new Data_Maybe.Just(n);
+      };
+      if (Data_Boolean.otherwise) {
+          return Data_Maybe.Nothing.value;
+      };
+      throw new Error("Failed pattern match at Data.Time.Component (line 90, column 1 - line 95, column 26): " + [ n.constructor.name ]);
+  });
+  var enumSecond = new Data_Enum.Enum(function () {
+      return ordSecond;
+  }, (function () {
+      var $28 = Data_Enum.toEnum(boundedEnumSecond);
+      var $29 = Data_Enum.fromEnum(boundedEnumSecond);
+      return function ($30) {
+          return $28((function (v) {
+              return v - 1 | 0;
+          })($29($30)));
+      };
+  })(), (function () {
+      var $31 = Data_Enum.toEnum(boundedEnumSecond);
+      var $32 = Data_Enum.fromEnum(boundedEnumSecond);
+      return function ($33) {
+          return $31((function (v) {
+              return v + 1 | 0;
+          })($32($33)));
+      };
+  })());
+  var boundedEnumMinute = new Data_Enum.BoundedEnum(function () {
+      return boundedMinute;
+  }, function () {
+      return enumMinute;
+  }, 60, function (v) {
+      return v;
+  }, function (n) {
+      if (n >= 0 && n <= 59) {
+          return new Data_Maybe.Just(n);
+      };
+      if (Data_Boolean.otherwise) {
+          return Data_Maybe.Nothing.value;
+      };
+      throw new Error("Failed pattern match at Data.Time.Component (line 61, column 1 - line 66, column 26): " + [ n.constructor.name ]);
+  });
+  var enumMinute = new Data_Enum.Enum(function () {
+      return ordMinute;
+  }, (function () {
+      var $34 = Data_Enum.toEnum(boundedEnumMinute);
+      var $35 = Data_Enum.fromEnum(boundedEnumMinute);
+      return function ($36) {
+          return $34((function (v) {
+              return v - 1 | 0;
+          })($35($36)));
+      };
+  })(), (function () {
+      var $37 = Data_Enum.toEnum(boundedEnumMinute);
+      var $38 = Data_Enum.fromEnum(boundedEnumMinute);
+      return function ($39) {
+          return $37((function (v) {
+              return v + 1 | 0;
+          })($38($39)));
+      };
+  })());
+  var boundedEnumMillisecond = new Data_Enum.BoundedEnum(function () {
+      return boundedMillisecond;
+  }, function () {
+      return enumMillisecond;
+  }, 1000, function (v) {
+      return v;
+  }, function (n) {
+      if (n >= 0 && n <= 999) {
+          return new Data_Maybe.Just(n);
+      };
+      if (Data_Boolean.otherwise) {
+          return Data_Maybe.Nothing.value;
+      };
+      throw new Error("Failed pattern match at Data.Time.Component (line 120, column 1 - line 125, column 31): " + [ n.constructor.name ]);
+  });
+  var enumMillisecond = new Data_Enum.Enum(function () {
+      return ordMillisecond;
+  }, (function () {
+      var $40 = Data_Enum.toEnum(boundedEnumMillisecond);
+      var $41 = Data_Enum.fromEnum(boundedEnumMillisecond);
+      return function ($42) {
+          return $40((function (v) {
+              return v - 1 | 0;
+          })($41($42)));
+      };
+  })(), (function () {
+      var $43 = Data_Enum.toEnum(boundedEnumMillisecond);
+      var $44 = Data_Enum.fromEnum(boundedEnumMillisecond);
+      return function ($45) {
+          return $43((function (v) {
+              return v + 1 | 0;
+          })($44($45)));
+      };
+  })());
+  var boundedEnumHour = new Data_Enum.BoundedEnum(function () {
+      return boundedHour;
+  }, function () {
+      return enumHour;
+  }, 24, function (v) {
+      return v;
+  }, function (n) {
+      if (n >= 0 && n <= 23) {
+          return new Data_Maybe.Just(n);
+      };
+      if (Data_Boolean.otherwise) {
+          return Data_Maybe.Nothing.value;
+      };
+      throw new Error("Failed pattern match at Data.Time.Component (line 32, column 1 - line 37, column 24): " + [ n.constructor.name ]);
+  });
+  var enumHour = new Data_Enum.Enum(function () {
+      return ordHour;
+  }, (function () {
+      var $46 = Data_Enum.toEnum(boundedEnumHour);
+      var $47 = Data_Enum.fromEnum(boundedEnumHour);
+      return function ($48) {
+          return $46((function (v) {
+              return v - 1 | 0;
+          })($47($48)));
+      };
+  })(), (function () {
+      var $49 = Data_Enum.toEnum(boundedEnumHour);
+      var $50 = Data_Enum.fromEnum(boundedEnumHour);
+      return function ($51) {
+          return $49((function (v) {
+              return v + 1 | 0;
+          })($50($51)));
+      };
+  })());
+  exports["boundedEnumHour"] = boundedEnumHour;
+  exports["boundedEnumMinute"] = boundedEnumMinute;
+  exports["boundedEnumSecond"] = boundedEnumSecond;
+  exports["boundedEnumMillisecond"] = boundedEnumMillisecond;
 })(PS);
 (function($PS) {
   // Generated by purs version 0.13.8
@@ -14680,19 +16114,6 @@ var PS = {};
 (function($PS) {
   // Generated by purs version 0.13.8
   "use strict";
-  $PS["Data.DateTime"] = $PS["Data.DateTime"] || {};
-  var exports = $PS["Data.DateTime"];
-  var Data_Date = $PS["Data.Date"];
-  var Data_Show = $PS["Data.Show"];
-  var Data_Time = $PS["Data.Time"];
-  var showDateTime = new Data_Show.Show(function (v) {
-      return "(DateTime " + (Data_Show.show(Data_Date.showDate)(v.value0) + (" " + (Data_Show.show(Data_Time.showTime)(v.value1) + ")")));
-  });
-  exports["showDateTime"] = showDateTime;
-})(PS);
-(function($PS) {
-  // Generated by purs version 0.13.8
-  "use strict";
   $PS["Data.Const"] = $PS["Data.Const"] || {};
   var exports = $PS["Data.Const"];
   var Control_Applicative = $PS["Control.Applicative"];
@@ -14974,7 +16395,6 @@ var PS = {};
   "use strict";
   $PS["Biscotti.Cookie.Types"] = $PS["Biscotti.Cookie.Types"] || {};
   var exports = $PS["Biscotti.Cookie.Types"];
-  var Data_DateTime = $PS["Data.DateTime"];
   var Data_Lens_Getter = $PS["Data.Lens.Getter"];
   var Data_Lens_Internal_Forget = $PS["Data.Lens.Internal.Forget"];
   var Data_Lens_Iso_Newtype = $PS["Data.Lens.Iso.Newtype"];
@@ -14983,8 +16403,7 @@ var PS = {};
   var Data_Maybe = $PS["Data.Maybe"];
   var Data_Newtype = $PS["Data.Newtype"];
   var Data_Profunctor_Strong = $PS["Data.Profunctor.Strong"];
-  var Data_Show = $PS["Data.Show"];
-  var Data_Symbol = $PS["Data.Symbol"];                                
+  var Data_Show = $PS["Data.Show"];                                    
   var Strict = (function () {
       function Strict() {
 
@@ -15020,26 +16439,7 @@ var PS = {};
           return "None";
       };
       throw new Error("Failed pattern match at Biscotti.Cookie.Types (line 67, column 1 - line 71, column 23): " + [ v.constructor.name ]);
-  });
-  var showCookie = Data_Show.showRecord()(Data_Show.showRecordFieldsCons(new Data_Symbol.IsSymbol(function () {
-      return "domain";
-  }))(Data_Show.showRecordFieldsCons(new Data_Symbol.IsSymbol(function () {
-      return "expires";
-  }))(Data_Show.showRecordFieldsCons(new Data_Symbol.IsSymbol(function () {
-      return "httpOnly";
-  }))(Data_Show.showRecordFieldsCons(new Data_Symbol.IsSymbol(function () {
-      return "maxAge";
-  }))(Data_Show.showRecordFieldsCons(new Data_Symbol.IsSymbol(function () {
-      return "name";
-  }))(Data_Show.showRecordFieldsCons(new Data_Symbol.IsSymbol(function () {
-      return "path";
-  }))(Data_Show.showRecordFieldsCons(new Data_Symbol.IsSymbol(function () {
-      return "sameSite";
-  }))(Data_Show.showRecordFieldsCons(new Data_Symbol.IsSymbol(function () {
-      return "secure";
-  }))(Data_Show.showRecordFieldsCons(new Data_Symbol.IsSymbol(function () {
-      return "value";
-  }))(Data_Show.showRecordFieldsNil)(Data_Show.showString))(Data_Show.showBoolean))(Data_Maybe.showMaybe(showSameSite)))(Data_Maybe.showMaybe(Data_Show.showString)))(Data_Show.showString))(Data_Maybe.showMaybe(Data_Show.showInt)))(Data_Show.showBoolean))(Data_Maybe.showMaybe(Data_DateTime.showDateTime)))(Data_Maybe.showMaybe(Data_Show.showString)));
+  });                                                                                                                                                                
   var newtypeCookie = new Data_Newtype.Newtype(function (n) {
       return n;
   }, Cookie);
@@ -15126,7 +16526,6 @@ var PS = {};
   exports["new"] = $$new;
   exports["setHttpOnly"] = setHttpOnly;
   exports["showSameSite"] = showSameSite;
-  exports["showCookie"] = showCookie;
 })(PS);
 (function($PS) {
   // Generated by purs version 0.13.8
@@ -24995,11 +26394,9 @@ var PS = {};
   exports["render"] = render;
 })(PS);
 (function($PS) {
-  // Generated by purs version 0.13.8
   "use strict";
   $PS["Fundoscopic.Handlers"] = $PS["Fundoscopic.Handlers"] || {};
   var exports = $PS["Fundoscopic.Handlers"];
-  var Biscotti_Cookie_Generator = $PS["Biscotti.Cookie.Generator"];
   var Biscotti_Cookie_Types = $PS["Biscotti.Cookie.Types"];
   var Control_Applicative = $PS["Control.Applicative"];
   var Control_Bind = $PS["Control.Bind"];
@@ -25015,7 +26412,6 @@ var PS = {};
   var Effect = $PS["Effect"];
   var Effect_Aff = $PS["Effect.Aff"];
   var Effect_Class = $PS["Effect.Class"];
-  var Effect_Console = $PS["Effect.Console"];
   var Fundoscopic_DB = $PS["Fundoscopic.DB"];
   var Fundoscopic_Domain_User = $PS["Fundoscopic.Domain.User"];
   var Fundoscopic_Routing = $PS["Fundoscopic.Routing"];
@@ -25025,7 +26421,7 @@ var PS = {};
   var Text_Smolder_HTML = $PS["Text.Smolder.HTML"];
   var Text_Smolder_HTML_Attributes = $PS["Text.Smolder.HTML.Attributes"];
   var Text_Smolder_Markup = $PS["Text.Smolder.Markup"];
-  var Text_Smolder_Renderer_String = $PS["Text.Smolder.Renderer.String"];                                                                                                                                                                                               
+  var Text_Smolder_Renderer_String = $PS["Text.Smolder.Renderer.String"];                
   var htmlResponse = function (status) {
       var $13 = JohnCowie_HTTPure.setContentType("text/html");
       var $14 = JohnCowie_HTTPure.response(status);
@@ -25058,15 +26454,13 @@ var PS = {};
               return function (req) {
                   var v = JohnCowie_Data_Lens.view(JohnCowie_HTTPure["_val"](JohnCowie_HTTPure.requestBasicRequest))(req);
                   return Control_Monad_Except_Trans.runExceptT(Control_Bind.bind(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(oauth.handleCode(v.value0.code)))(function (userData) {
-                      var newUser = Fundoscopic_Domain_User.newUser(userData.name)(Fundoscopic_Domain_User.newGoogleId(userData.sub))(Fundoscopic_Domain_User.newGoogleAccessToken("arghghh"));
+                      var newUser = Fundoscopic_Domain_User.newUser(userData.name)(Fundoscopic_Domain_User.newGoogleId(userData.sub))(Fundoscopic_Domain_User.newGoogleAccessToken(userData.accessToken));
                       return Control_Bind.bind(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(Data_Functor.map(Effect_Aff.functorAff)(Data_Bifunctor.lmap(Data_Either.bifunctorEither)(Data_Show.show(Database_PostgreSQL.showPGError)))(Fundoscopic_DB.upsertUser(newUser)(db))))(function (userId) {
                           return Control_Bind.bind(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(Effect_Class.liftEffect(Effect_Aff.monadEffectAff)(Data_Functor.map(Effect.functorEffect)(Data_Either.Right.create)(jwtGen.generate({
                               sub: userId
                           })))))(function (v1) {
                               var cookie = Biscotti_Cookie_Types.setHttpOnly(Biscotti_Cookie_Types["new"]("accesstoken")(Data_Newtype.unwrap(JohnCowie_JWT.newtypeJWT)(v1)));
-                              return Control_Bind.discard(Control_Bind.discardUnit)(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(Effect_Class.liftEffect(Effect_Aff.monadEffectAff)(Data_Functor.map(Effect.functorEffect)(Data_Either.Right.create)(Effect_Console.log("Cookie: " + Biscotti_Cookie_Generator.stringify(cookie))))))(function () {
-                                  return Control_Applicative.pure(Control_Monad_Except_Trans.applicativeExceptT(Effect_Aff.monadAff))(JohnCowie_HTTPure.setCookie(cookie)(JohnCowie_HTTPure.redirect(Data_Monoid.monoidString)(Fundoscopic_Routing.routeForHandler(Fundoscopic_Routing.Home.value))));
-                              });
+                              return Control_Applicative.pure(Control_Monad_Except_Trans.applicativeExceptT(Effect_Aff.monadAff))(JohnCowie_HTTPure.setCookie(cookie)(JohnCowie_HTTPure.redirect(Data_Monoid.monoidString)(Fundoscopic_Routing.routeForHandler(Fundoscopic_Routing.Home.value))));
                           });
                       });
                   }));
@@ -25080,6 +26474,7 @@ var PS = {};
   exports["googleOauthCallback"] = googleOauthCallback;
 })(PS);
 (function($PS) {
+  // Generated by purs version 0.13.8
   "use strict";
   $PS["Fundoscopic.Middleware.Auth"] = $PS["Fundoscopic.Middleware.Auth"] || {};
   var exports = $PS["Fundoscopic.Middleware.Auth"];
@@ -25089,13 +26484,9 @@ var PS = {};
   var Control_Monad_Except_Trans = $PS["Control.Monad.Except.Trans"];
   var Data_Either = $PS["Data.Either"];
   var Data_Functor = $PS["Data.Functor"];
-  var Data_Maybe = $PS["Data.Maybe"];
   var Data_Newtype = $PS["Data.Newtype"];
-  var Data_Show = $PS["Data.Show"];
-  var Effect = $PS["Effect"];
   var Effect_Aff = $PS["Effect.Aff"];
   var Effect_Class = $PS["Effect.Class"];
-  var Effect_Console = $PS["Effect.Console"];
   var JohnCowie_HTTPure = $PS["JohnCowie.HTTPure"];                
   var AuthedRequest = (function () {
       function AuthedRequest(value0, value1) {
@@ -25129,7 +26520,7 @@ var PS = {};
               if (e instanceof Data_Either.Right) {
                   return Control_Applicative.pure(Effect_Aff.applicativeAff)(e.value0);
               };
-              throw new Error("Failed pattern match at Fundoscopic.Middleware.Auth (line 57, column 3 - line 59, column 24): " + [ e.constructor.name ]);
+              throw new Error("Failed pattern match at Fundoscopic.Middleware.Auth (line 56, column 3 - line 58, column 24): " + [ e.constructor.name ]);
           });
       };
   };
@@ -25138,11 +26529,9 @@ var PS = {};
           return function (authErrorResponse) {
               return function (handler) {
                   return function (request) {
-                      return orErrorResp(authErrorResponse)(Control_Bind.discard(Control_Bind.discardUnit)(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(Effect_Class.liftEffect(Effect_Aff.monadEffectAff)(Data_Functor.map(Effect.functorEffect)(Data_Either.Right.create)(Effect_Console.log(Data_Show.show(Data_Either.showEither(Data_Show.showString)(Data_Maybe.showMaybe(Biscotti_Cookie_Types.showCookie)))(JohnCowie_HTTPure.getCookie(JohnCowie_HTTPure.requestBasicRequest)("accesstoken")(request)))))))(function () {
-                          return Control_Bind.bind(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(Control_Applicative.pure(Effect_Aff.applicativeAff)(retrieveToken(JohnCowie_HTTPure.requestBasicRequest)(dictNewtype)(request))))(function (token) {
-                              return Control_Bind.bind(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(Effect_Class.liftEffect(Effect_Aff.monadEffectAff)(tokenVerifier(token))))(function (tp) {
-                                  return Control_Monad_Except_Trans.ExceptT(Data_Functor.map(Effect_Aff.functorAff)(Data_Either.Right.create)(handler(new AuthedRequest(tp, request))));
-                              });
+                      return orErrorResp(authErrorResponse)(Control_Bind.bind(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(Control_Applicative.pure(Effect_Aff.applicativeAff)(retrieveToken(JohnCowie_HTTPure.requestBasicRequest)(dictNewtype)(request))))(function (token) {
+                          return Control_Bind.bind(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(Effect_Class.liftEffect(Effect_Aff.monadEffectAff)(tokenVerifier(token))))(function (tp) {
+                              return Control_Monad_Except_Trans.ExceptT(Data_Functor.map(Effect_Aff.functorAff)(Data_Either.Right.create)(handler(new AuthedRequest(tp, request))));
                           });
                       }));
                   };
@@ -25544,6 +26933,7 @@ var PS = {};
   var Data_Newtype = $PS["Data.Newtype"];
   var Data_Semigroup = $PS["Data.Semigroup"];
   var Data_Show = $PS["Data.Show"];
+  var Data_String_Common = $PS["Data.String.Common"];
   var Data_Symbol = $PS["Data.Symbol"];
   var Data_Tuple = $PS["Data.Tuple"];
   var Effect_Aff = $PS["Effect.Aff"];
@@ -25556,13 +26946,53 @@ var PS = {};
   var Type_Equality = $PS["Type.Equality"];
   var URI_Extra_QueryPairs = $PS["URI.Extra.QueryPairs"];
   var URI_Query = $PS["URI.Query"];                
+  var Profile = (function () {
+      function Profile() {
+
+      };
+      Profile.value = new Profile();
+      return Profile;
+  })();
+  var Email = (function () {
+      function Email() {
+
+      };
+      Email.value = new Email();
+      return Email;
+  })();
+  var SpreadSheets = (function () {
+      function SpreadSheets() {
+
+      };
+      SpreadSheets.value = new SpreadSheets();
+      return SpreadSheets;
+  })();
+  var showScope = function (v) {
+      if (v instanceof Profile) {
+          return "profile";
+      };
+      if (v instanceof Email) {
+          return "email";
+      };
+      if (v instanceof SpreadSheets) {
+          return "https://www.googleapis.com/auth/spreadsheets.readonly";
+      };
+      throw new Error("Failed pattern match at JohnCowie.OAuth.Google (line 53, column 1 - line 53, column 29): " + [ v.constructor.name ]);
+  };
+  var scopesStr = (function () {
+      var $12 = Data_String_Common.joinWith(" ");
+      var $13 = Data_Functor.map(Data_Functor.functorArray)(showScope);
+      return function ($14) {
+          return $12($13($14));
+      };
+  })();
   var queryString = function (pairs) {
       return URI_Query.print(URI_Extra_QueryPairs.print(Control_Category.identity(Control_Category.categoryFn))(Control_Category.identity(Control_Category.categoryFn))(URI_Extra_QueryPairs.QueryPairs(Data_Functor.map(Data_Functor.functorArray)(function (v) {
           return new Data_Tuple.Tuple(URI_Extra_QueryPairs.unsafeKeyFromString(v.value0), new Data_Maybe.Just(URI_Extra_QueryPairs.unsafeValueFromString(v.value1)));
       })(pairs))));
   };
   var redirect = function (config) {
-      var query = queryString([ new Data_Tuple.Tuple("response_type", "code"), new Data_Tuple.Tuple("access_type", "online"), new Data_Tuple.Tuple("scope", "profile email"), new Data_Tuple.Tuple("prompt", "select_account consent"), new Data_Tuple.Tuple("client_id", config.clientId), new Data_Tuple.Tuple("redirect_uri", config.callbackUrl) ]);
+      var query = queryString([ new Data_Tuple.Tuple("response_type", "code"), new Data_Tuple.Tuple("access_type", "online"), Data_Tuple.Tuple.create("scope")(scopesStr([ Profile.value, Email.value, SpreadSheets.value ])), new Data_Tuple.Tuple("prompt", "select_account consent"), new Data_Tuple.Tuple("client_id", config.clientId), new Data_Tuple.Tuple("redirect_uri", config.callbackUrl) ]);
       return config.oauthUrl + query;
   };
   var formData = function (tuples) {
@@ -25594,13 +27024,20 @@ var PS = {};
   var handleCode = function (config) {
       return function (code) {
           return Control_Monad_Except_Trans.runExceptT(Control_Bind.bind(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(fetchOpenIdData(config)(code)))(function (tokenData) {
-              return Control_Monad_Except_Trans.ExceptT(Control_Applicative.pure(Effect_Aff.applicativeAff)(JohnCowie_JWT.extractPayload(Data_Argonaut_Decode_Class.decodeRecord(Data_Argonaut_Decode_Class.gDecodeJsonCons(Data_Argonaut_Decode_Class.decodeJsonString)(Data_Argonaut_Decode_Class.gDecodeJsonCons(Data_Argonaut_Decode_Class.decodeJsonString)(Data_Argonaut_Decode_Class.gDecodeJsonCons(Data_Argonaut_Decode_Class.decodeJsonString)(Data_Argonaut_Decode_Class.gDecodeJsonNil)(new Data_Symbol.IsSymbol(function () {
+              return Control_Bind.bind(Control_Monad_Except_Trans.bindExceptT(Effect_Aff.monadAff))(Control_Monad_Except_Trans.ExceptT(Control_Applicative.pure(Effect_Aff.applicativeAff)(JohnCowie_JWT.extractPayload(Data_Argonaut_Decode_Class.decodeRecord(Data_Argonaut_Decode_Class.gDecodeJsonCons(Data_Argonaut_Decode_Class.decodeJsonString)(Data_Argonaut_Decode_Class.gDecodeJsonCons(Data_Argonaut_Decode_Class.decodeJsonString)(Data_Argonaut_Decode_Class.gDecodeJsonCons(Data_Argonaut_Decode_Class.decodeJsonString)(Data_Argonaut_Decode_Class.gDecodeJsonNil)(new Data_Symbol.IsSymbol(function () {
                   return "sub";
               }))()())(new Data_Symbol.IsSymbol(function () {
                   return "name";
               }))()())(new Data_Symbol.IsSymbol(function () {
                   return "email";
-              }))()())())(tokenData.id_token)));
+              }))()())())(tokenData.id_token))))(function (v) {
+                  return Control_Applicative.pure(Control_Monad_Except_Trans.applicativeExceptT(Effect_Aff.monadAff))({
+                      sub: v.sub,
+                      name: v.name,
+                      email: v.email,
+                      accessToken: Data_Newtype.unwrap(JohnCowie_JWT.newtypeJWT)(tokenData.access_token)
+                  });
+              });
           }));
       };
   };
@@ -25643,7 +27080,8 @@ var PS = {};
               return Control_Applicative.pure(Effect_Aff.applicativeAff)(new Data_Either.Right({
                   sub: "100",
                   name: "StubUser",
-                  email: "stub@email.com"
+                  email: "stub@email.com",
+                  accessToken: "stubaccesstoken"
               }));
           }
       };
@@ -25972,1501 +27410,6 @@ var PS = {};
   exports["showMode"] = showMode;
 })(PS);
 PS["Main"].main();
-},
-"g2/go55S8FHWJYPYN107JwtMuT3QJrElQ4qJ5aAljEE=":
-function (require, module, exports, __dirname, __filename) {
-'use strict'
-
-var extend = require('xtend/mutable')
-
-module.exports = PostgresInterval
-
-function PostgresInterval (raw) {
-  if (!(this instanceof PostgresInterval)) {
-    return new PostgresInterval(raw)
-  }
-  extend(this, parse(raw))
-}
-var properties = ['seconds', 'minutes', 'hours', 'days', 'months', 'years']
-PostgresInterval.prototype.toPostgres = function () {
-  var filtered = properties.filter(this.hasOwnProperty, this)
-
-  // In addition to `properties`, we need to account for fractions of seconds.
-  if (this.milliseconds && filtered.indexOf('seconds') < 0) {
-    filtered.push('seconds')
-  }
-
-  if (filtered.length === 0) return '0'
-  return filtered
-    .map(function (property) {
-      var value = this[property] || 0
-
-      // Account for fractional part of seconds,
-      // remove trailing zeroes.
-      if (property === 'seconds' && this.milliseconds) {
-        value = (value + this.milliseconds / 1000).toFixed(6).replace(/\.?0+$/, '')
-      }
-
-      return value + ' ' + property
-    }, this)
-    .join(' ')
-}
-
-var propertiesISOEquivalent = {
-  years: 'Y',
-  months: 'M',
-  days: 'D',
-  hours: 'H',
-  minutes: 'M',
-  seconds: 'S'
-}
-var dateProperties = ['years', 'months', 'days']
-var timeProperties = ['hours', 'minutes', 'seconds']
-// according to ISO 8601
-PostgresInterval.prototype.toISOString = PostgresInterval.prototype.toISO = function () {
-  var datePart = dateProperties
-    .map(buildProperty, this)
-    .join('')
-
-  var timePart = timeProperties
-    .map(buildProperty, this)
-    .join('')
-
-  return 'P' + datePart + 'T' + timePart
-
-  function buildProperty (property) {
-    var value = this[property] || 0
-
-    // Account for fractional part of seconds,
-    // remove trailing zeroes.
-    if (property === 'seconds' && this.milliseconds) {
-      value = (value + this.milliseconds / 1000).toFixed(6).replace(/0+$/, '')
-    }
-
-    return value + propertiesISOEquivalent[property]
-  }
-}
-
-var NUMBER = '([+-]?\\d+)'
-var YEAR = NUMBER + '\\s+years?'
-var MONTH = NUMBER + '\\s+mons?'
-var DAY = NUMBER + '\\s+days?'
-var TIME = '([+-])?([\\d]*):(\\d\\d):(\\d\\d)\\.?(\\d{1,6})?'
-var INTERVAL = new RegExp([YEAR, MONTH, DAY, TIME].map(function (regexString) {
-  return '(' + regexString + ')?'
-})
-  .join('\\s*'))
-
-// Positions of values in regex match
-var positions = {
-  years: 2,
-  months: 4,
-  days: 6,
-  hours: 9,
-  minutes: 10,
-  seconds: 11,
-  milliseconds: 12
-}
-// We can use negative time
-var negatives = ['hours', 'minutes', 'seconds', 'milliseconds']
-
-function parseMilliseconds (fraction) {
-  // add omitted zeroes
-  var microseconds = fraction + '000000'.slice(fraction.length)
-  return parseInt(microseconds, 10) / 1000
-}
-
-function parse (interval) {
-  if (!interval) return {}
-  var matches = INTERVAL.exec(interval)
-  var isNegative = matches[8] === '-'
-  return Object.keys(positions)
-    .reduce(function (parsed, property) {
-      var position = positions[property]
-      var value = matches[position]
-      // no empty string
-      if (!value) return parsed
-      // milliseconds are actually microseconds (up to 6 digits)
-      // with omitted trailing zeroes.
-      value = property === 'milliseconds'
-        ? parseMilliseconds(value)
-        : parseInt(value, 10)
-      // no zeros
-      if (!value) return parsed
-      if (isNegative && ~negatives.indexOf(property)) {
-        value *= -1
-      }
-      parsed[property] = value
-      return parsed
-    }, {})
-}
-
-},
-"gHulgO1CPlGGcsJ7QCKlastpO+BDSXM//B/m8yT7zuI=":
-function (require, module, exports, __dirname, __filename) {
-'use strict'
-
-exports.parse = function (source, transform) {
-  return new ArrayParser(source, transform).parse()
-}
-
-class ArrayParser {
-  constructor (source, transform) {
-    this.source = source
-    this.transform = transform || identity
-    this.position = 0
-    this.entries = []
-    this.recorded = []
-    this.dimension = 0
-  }
-
-  isEof () {
-    return this.position >= this.source.length
-  }
-
-  nextCharacter () {
-    var character = this.source[this.position++]
-    if (character === '\\') {
-      return {
-        value: this.source[this.position++],
-        escaped: true
-      }
-    }
-    return {
-      value: character,
-      escaped: false
-    }
-  }
-
-  record (character) {
-    this.recorded.push(character)
-  }
-
-  newEntry (includeEmpty) {
-    var entry
-    if (this.recorded.length > 0 || includeEmpty) {
-      entry = this.recorded.join('')
-      if (entry === 'NULL' && !includeEmpty) {
-        entry = null
-      }
-      if (entry !== null) entry = this.transform(entry)
-      this.entries.push(entry)
-      this.recorded = []
-    }
-  }
-
-  consumeDimensions () {
-    if (this.source[0] === '[') {
-      while (!this.isEof()) {
-        var char = this.nextCharacter()
-        if (char.value === '=') break
-      }
-    }
-  }
-
-  parse (nested) {
-    var character, parser, quote
-    this.consumeDimensions()
-    while (!this.isEof()) {
-      character = this.nextCharacter()
-      if (character.value === '{' && !quote) {
-        this.dimension++
-        if (this.dimension > 1) {
-          parser = new ArrayParser(this.source.substr(this.position - 1), this.transform)
-          this.entries.push(parser.parse(true))
-          this.position += parser.position - 2
-        }
-      } else if (character.value === '}' && !quote) {
-        this.dimension--
-        if (!this.dimension) {
-          this.newEntry()
-          if (nested) return this.entries
-        }
-      } else if (character.value === '"' && !character.escaped) {
-        if (quote) this.newEntry(true)
-        quote = !quote
-      } else if (character.value === ',' && !quote) {
-        this.newEntry()
-      } else {
-        this.record(character.value)
-      }
-    }
-    if (this.dimension !== 0) {
-      throw new Error('array dimension not balanced')
-    }
-    return this.entries
-  }
-}
-
-function identity (value) {
-  return value
-}
-
-},
-"ivxPzUcGZhHgeKX6RYdXghUBzhJ5MemCxs/8au6lkz0=":
-function (require, module, exports, __dirname, __filename) {
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const serializer_1 = require("./serializer");
-exports.serialize = serializer_1.serialize;
-const parser_1 = require("./parser");
-function parse(stream, callback) {
-    const parser = new parser_1.Parser();
-    stream.on('data', (buffer) => parser.parse(buffer, callback));
-    return new Promise((resolve) => stream.on('end', () => resolve()));
-}
-exports.parse = parse;
-//# sourceMappingURL=index.js.map
-},
-"jjKg038gvW99W9v5nQQaonvkfLvlFyrBPr9zgKELO/Y=":
-function (require, module, exports, __dirname, __filename) {
-/**
- * Module dependencies.
- */
-
-var fs = require('fs'),
-  path = require('path'),
-  fileURLToPath = require('file-uri-to-path'),
-  join = path.join,
-  dirname = path.dirname,
-  exists =
-    (fs.accessSync &&
-      function(path) {
-        try {
-          fs.accessSync(path);
-        } catch (e) {
-          return false;
-        }
-        return true;
-      }) ||
-    fs.existsSync ||
-    path.existsSync,
-  defaults = {
-    arrow: process.env.NODE_BINDINGS_ARROW || ' → ',
-    compiled: process.env.NODE_BINDINGS_COMPILED_DIR || 'compiled',
-    platform: process.platform,
-    arch: process.arch,
-    nodePreGyp:
-      'node-v' +
-      process.versions.modules +
-      '-' +
-      process.platform +
-      '-' +
-      process.arch,
-    version: process.versions.node,
-    bindings: 'bindings.node',
-    try: [
-      // node-gyp's linked version in the "build" dir
-      ['module_root', 'build', 'bindings'],
-      // node-waf and gyp_addon (a.k.a node-gyp)
-      ['module_root', 'build', 'Debug', 'bindings'],
-      ['module_root', 'build', 'Release', 'bindings'],
-      // Debug files, for development (legacy behavior, remove for node v0.9)
-      ['module_root', 'out', 'Debug', 'bindings'],
-      ['module_root', 'Debug', 'bindings'],
-      // Release files, but manually compiled (legacy behavior, remove for node v0.9)
-      ['module_root', 'out', 'Release', 'bindings'],
-      ['module_root', 'Release', 'bindings'],
-      // Legacy from node-waf, node <= 0.4.x
-      ['module_root', 'build', 'default', 'bindings'],
-      // Production "Release" buildtype binary (meh...)
-      ['module_root', 'compiled', 'version', 'platform', 'arch', 'bindings'],
-      // node-qbs builds
-      ['module_root', 'addon-build', 'release', 'install-root', 'bindings'],
-      ['module_root', 'addon-build', 'debug', 'install-root', 'bindings'],
-      ['module_root', 'addon-build', 'default', 'install-root', 'bindings'],
-      // node-pre-gyp path ./lib/binding/{node_abi}-{platform}-{arch}
-      ['module_root', 'lib', 'binding', 'nodePreGyp', 'bindings']
-    ]
-  };
-
-/**
- * The main `bindings()` function loads the compiled bindings for a given module.
- * It uses V8's Error API to determine the parent filename that this function is
- * being invoked from, which is then used to find the root directory.
- */
-
-function bindings(opts) {
-  // Argument surgery
-  if (typeof opts == 'string') {
-    opts = { bindings: opts };
-  } else if (!opts) {
-    opts = {};
-  }
-
-  // maps `defaults` onto `opts` object
-  Object.keys(defaults).map(function(i) {
-    if (!(i in opts)) opts[i] = defaults[i];
-  });
-
-  // Get the module root
-  if (!opts.module_root) {
-    opts.module_root = exports.getRoot(exports.getFileName());
-  }
-
-  // Ensure the given bindings name ends with .node
-  if (path.extname(opts.bindings) != '.node') {
-    opts.bindings += '.node';
-  }
-
-  // https://github.com/webpack/webpack/issues/4175#issuecomment-342931035
-  var requireFunc =
-    typeof __webpack_require__ === 'function'
-      ? __non_webpack_require__
-      : require;
-
-  var tries = [],
-    i = 0,
-    l = opts.try.length,
-    n,
-    b,
-    err;
-
-  for (; i < l; i++) {
-    n = join.apply(
-      null,
-      opts.try[i].map(function(p) {
-        return opts[p] || p;
-      })
-    );
-    tries.push(n);
-    try {
-      b = opts.path ? requireFunc.resolve(n) : requireFunc(n);
-      if (!opts.path) {
-        b.path = n;
-      }
-      return b;
-    } catch (e) {
-      if (e.code !== 'MODULE_NOT_FOUND' &&
-          e.code !== 'QUALIFIED_PATH_RESOLUTION_FAILED' &&
-          !/not find/i.test(e.message)) {
-        throw e;
-      }
-    }
-  }
-
-  err = new Error(
-    'Could not locate the bindings file. Tried:\n' +
-      tries
-        .map(function(a) {
-          return opts.arrow + a;
-        })
-        .join('\n')
-  );
-  err.tries = tries;
-  throw err;
-}
-module.exports = exports = bindings;
-
-/**
- * Gets the filename of the JavaScript file that invokes this function.
- * Used to help find the root directory of a module.
- * Optionally accepts an filename argument to skip when searching for the invoking filename
- */
-
-exports.getFileName = function getFileName(calling_file) {
-  var origPST = Error.prepareStackTrace,
-    origSTL = Error.stackTraceLimit,
-    dummy = {},
-    fileName;
-
-  Error.stackTraceLimit = 10;
-
-  Error.prepareStackTrace = function(e, st) {
-    for (var i = 0, l = st.length; i < l; i++) {
-      fileName = st[i].getFileName();
-      if (fileName !== __filename) {
-        if (calling_file) {
-          if (fileName !== calling_file) {
-            return;
-          }
-        } else {
-          return;
-        }
-      }
-    }
-  };
-
-  // run the 'prepareStackTrace' function above
-  Error.captureStackTrace(dummy);
-  dummy.stack;
-
-  // cleanup
-  Error.prepareStackTrace = origPST;
-  Error.stackTraceLimit = origSTL;
-
-  // handle filename that starts with "file://"
-  var fileSchema = 'file://';
-  if (fileName.indexOf(fileSchema) === 0) {
-    fileName = fileURLToPath(fileName);
-  }
-
-  return fileName;
-};
-
-/**
- * Gets the root directory of a module, given an arbitrary filename
- * somewhere in the module tree. The "root directory" is the directory
- * containing the `package.json` file.
- *
- *   In:  /home/nate/node-native-module/lib/index.js
- *   Out: /home/nate/node-native-module
- */
-
-exports.getRoot = function getRoot(file) {
-  var dir = dirname(file),
-    prev;
-  while (true) {
-    if (dir === '.') {
-      // Avoids an infinite loop in rare cases, like the REPL
-      dir = process.cwd();
-    }
-    if (
-      exists(join(dir, 'package.json')) ||
-      exists(join(dir, 'node_modules'))
-    ) {
-      // Found the 'package.json' file or 'node_modules' dir; we're done
-      return dir;
-    }
-    if (prev === dir) {
-      // Got to the top
-      throw new Error(
-        'Could not find module root given file: "' +
-          file +
-          '". Do you have a `package.json` file? '
-      );
-    }
-    // Try the parent dir next
-    prev = dir;
-    dir = join(dir, '..');
-  }
-};
-
-},
-"mfthy3im14t6X8C5rCZK1YJyr0i+S8UL/blIsTQuMpI=":
-function (require, module, exports, __dirname, __filename) {
-'use strict'
-module.exports = require('./client')
-
-},
-"o+w5yxsBUAN7YU9TURngynJtL7CrEHeDiIo22OKkZrM=":
-function (require, module, exports, __dirname, __filename) {
-'use strict'
-
-var DATE_TIME = /(\d{1,})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(\.\d{1,})?.*?( BC)?$/
-var DATE = /^(\d{1,})-(\d{2})-(\d{2})( BC)?$/
-var TIME_ZONE = /([Z+-])(\d{2})?:?(\d{2})?:?(\d{2})?/
-var INFINITY = /^-?infinity$/
-
-module.exports = function parseDate (isoDate) {
-  if (INFINITY.test(isoDate)) {
-    // Capitalize to Infinity before passing to Number
-    return Number(isoDate.replace('i', 'I'))
-  }
-  var matches = DATE_TIME.exec(isoDate)
-
-  if (!matches) {
-    // Force YYYY-MM-DD dates to be parsed as local time
-    return getDate(isoDate) || null
-  }
-
-  var isBC = !!matches[8]
-  var year = parseInt(matches[1], 10)
-  if (isBC) {
-    year = bcYearToNegativeYear(year)
-  }
-
-  var month = parseInt(matches[2], 10) - 1
-  var day = matches[3]
-  var hour = parseInt(matches[4], 10)
-  var minute = parseInt(matches[5], 10)
-  var second = parseInt(matches[6], 10)
-
-  var ms = matches[7]
-  ms = ms ? 1000 * parseFloat(ms) : 0
-
-  var date
-  var offset = timeZoneOffset(isoDate)
-  if (offset != null) {
-    date = new Date(Date.UTC(year, month, day, hour, minute, second, ms))
-
-    // Account for years from 0 to 99 being interpreted as 1900-1999
-    // by Date.UTC / the multi-argument form of the Date constructor
-    if (is0To99(year)) {
-      date.setUTCFullYear(year)
-    }
-
-    date.setTime(date.getTime() - offset)
-  } else {
-    date = new Date(year, month, day, hour, minute, second, ms)
-
-    if (is0To99(year)) {
-      date.setFullYear(year)
-    }
-  }
-
-  return date
-}
-
-function getDate (isoDate) {
-  var matches = DATE.exec(isoDate)
-  if (!matches) {
-    return
-  }
-
-  var year = parseInt(matches[1], 10)
-  var isBC = !!matches[4]
-  if (isBC) {
-    year = bcYearToNegativeYear(year)
-  }
-
-  var month = parseInt(matches[2], 10) - 1
-  var day = matches[3]
-  // YYYY-MM-DD will be parsed as local time
-  var date = new Date(year, month, day)
-
-  if (is0To99(year)) {
-    date.setFullYear(year)
-  }
-
-  return date
-}
-
-// match timezones:
-// Z (UTC)
-// -05
-// +06:30
-function timeZoneOffset (isoDate) {
-  var zone = TIME_ZONE.exec(isoDate.split(' ')[1])
-  if (!zone) return
-  var type = zone[1]
-
-  if (type === 'Z') {
-    return 0
-  }
-  var sign = type === '-' ? -1 : 1
-  var offset = parseInt(zone[2], 10) * 3600 +
-    parseInt(zone[3] || 0, 10) * 60 +
-    parseInt(zone[4] || 0, 10)
-
-  return offset * sign * 1000
-}
-
-function bcYearToNegativeYear (year) {
-  // Account for numerical difference between representations of BC years
-  // See: https://github.com/bendrucker/postgres-date/issues/5
-  return -(year - 1)
-}
-
-function is0To99 (num) {
-  return num >= 0 && num < 100
-}
-
-},
-"pxUwCL/NaJJErBzfOJVnSSyfoCILL5oPs+x0yEQzx0k=":
-function (require, module, exports, __dirname, __filename) {
-var PQ = module.exports = require('bindings')('addon.node').PQ;
-
-//print out the include dir
-//if you want to include this in a binding.gyp file
-if(!module.parent) {
-  var path = require('path');
-  console.log(path.normalize(__dirname + '/src'));
-}
-
-var EventEmitter = require('events').EventEmitter;
-var assert = require('assert');
-
-for(var key in EventEmitter.prototype) {
-  PQ.prototype[key] = EventEmitter.prototype[key];
-}
-
-//SYNC connects to the server
-//throws an exception in the event of a connection error
-PQ.prototype.connectSync = function(paramString) {
-  this.connected = true;
-  if(!paramString) {
-    paramString = '';
-  }
-  var connected = this.$connectSync(paramString);
-  if(!connected) {
-    var err = new Error(this.errorMessage());
-    this.finish();
-    throw err;
-  }
-};
-
-//connects async using a background thread
-//calls the callback with an error if there was one
-PQ.prototype.connect = function(paramString, cb) {
-  this.connected = true;
-  if(typeof paramString == 'function') {
-    cb = paramString;
-    paramString = '';
-  }
-  if(!paramString) {
-    paramString = '';
-  }
-  assert(cb, 'Must provide a connection callback');
-  if(process.domain) {
-    cb = process.domain.bind(cb);
-  }
-  this.$connect(paramString, cb);
-};
-
-PQ.prototype.errorMessage = function() {
-  return this.$getLastErrorMessage();
-};
-
-//returns an int for the fd of the socket
-PQ.prototype.socket = function() {
-  return this.$socket();
-};
-
-// return server version number e.g. 90300
-PQ.prototype.serverVersion = function () {
-  return this.$serverVersion();
-};
-
-//finishes the connection & closes it
-PQ.prototype.finish = function() {
-  this.connected = false;
-  this.$finish();
-};
-
-////SYNC executes a plain text query
-//immediately stores the results within the PQ object for consumption with
-//ntuples, getvalue, etc...
-//returns false if there was an error
-//consume additional error details via PQ#errorMessage & friends
-PQ.prototype.exec = function(commandText) {
-  if(!commandText) {
-    commandText = '';
-  }
-  this.$exec(commandText);
-};
-
-//SYNC executes a query with parameters
-//immediately stores the results within the PQ object for consumption with
-//ntuples, getvalue, etc...
-//returns false if there was an error
-//consume additional error details via PQ#errorMessage & friends
-PQ.prototype.execParams = function(commandText, parameters) {
-  if(!commandText) {
-    commandText = '';
-  }
-  if(!parameters) {
-    parameters = [];
-  }
-  this.$execParams(commandText, parameters);
-};
-
-//SYNC prepares a named query and stores the result
-//immediately stores the results within the PQ object for consumption with
-//ntuples, getvalue, etc...
-//returns false if there was an error
-//consume additional error details via PQ#errorMessage & friends
-PQ.prototype.prepare = function(statementName, commandText, nParams) {
-  assert.equal(arguments.length, 3, 'Must supply 3 arguments');
-  if(!statementName) {
-    statementName = '';
-  }
-  if(!commandText) {
-    commandText = '';
-  }
-  nParams = Number(nParams) || 0;
-  this.$prepare(statementName, commandText, nParams);
-};
-
-//SYNC executes a named, prepared query and stores the result
-//immediately stores the results within the PQ object for consumption with
-//ntuples, getvalue, etc...
-//returns false if there was an error
-//consume additional error details via PQ#errorMessage & friends
-PQ.prototype.execPrepared = function(statementName, parameters) {
-  if(!statementName) {
-    statementName = '';
-  }
-  if(!parameters) {
-    parameters = [];
-  }
-  this.$execPrepared(statementName, parameters);
-};
-
-//send a command to begin executing a query in async mode
-//returns true if sent, or false if there was a send failure
-PQ.prototype.sendQuery = function(commandText) {
-  if(!commandText) {
-    commandText = '';
-  }
-  return this.$sendQuery(commandText);
-};
-
-//send a command to begin executing a query with parameters in async mode
-//returns true if sent, or false if there was a send failure
-PQ.prototype.sendQueryParams = function(commandText, parameters) {
-  if(!commandText) {
-    commandText = '';
-  }
-  if(!parameters) {
-    parameters = [];
-  }
-  return this.$sendQueryParams(commandText, parameters);
-};
-
-//send a command to prepare a named query in async mode
-//returns true if sent, or false if there was a send failure
-PQ.prototype.sendPrepare = function(statementName, commandText, nParams) {
-  assert.equal(arguments.length, 3, 'Must supply 3 arguments');
-  if(!statementName) {
-    statementName = '';
-  }
-  if(!commandText) {
-    commandText = '';
-  }
-  nParams = Number(nParams) || 0;
-  return this.$sendPrepare(statementName, commandText, nParams);
-};
-
-//send a command to execute a named query in async mode
-//returns true if sent, or false if there was a send failure
-PQ.prototype.sendQueryPrepared = function(statementName, parameters) {
-  if(!statementName) {
-    statementName = '';
-  }
-  if(!parameters) {
-    parameters = [];
-  }
-  return this.$sendQueryPrepared(statementName, parameters);
-};
-
-//'pops' a result out of the buffered
-//response data read during async command execution
-//and stores it on the c/c++ object so you can consume
-//the data from it.  returns true if there was a pending result
-//or false if there was no pending result. if there was no pending result
-//the last found result is not overwritten so you can call getResult as many
-//times as you want, and you'll always have the last available result for consumption
-PQ.prototype.getResult = function() {
-  return this.$getResult();
-};
-
-//returns a text of the enum associated with the result
-//usually just PGRES_COMMAND_OK or PGRES_FATAL_ERROR
-PQ.prototype.resultStatus = function() {
-  return this.$resultStatus();
-};
-
-PQ.prototype.resultErrorMessage = function() {
-  return this.$resultErrorMessage();
-};
-
-PQ.prototype.resultErrorFields = function() {
-  return this.$resultErrorFields();
-};
-
-//free the memory associated with a result
-//this is somewhat handled for you within the c/c++ code
-//by never allowing the code to 'leak' a result. still,
-//if you absolutely want to free it yourself, you can use this.
-PQ.prototype.clear = function() {
-  this.$clear();
-};
-
-//returns the number of tuples (rows) in the result set
-PQ.prototype.ntuples = function() {
-  return this.$ntuples();
-};
-
-//returns the number of fields (columns) in the result set
-PQ.prototype.nfields = function() {
-  return this.$nfields();
-};
-
-//returns the name of the field (column) at the given offset
-PQ.prototype.fname = function(offset) {
-  return this.$fname(offset);
-};
-
-//returns the Oid of the type for the given field
-PQ.prototype.ftype = function(offset) {
-  return this.$ftype(offset);
-};
-
-//returns a text value at the given row/col
-//if the value is null this still returns empty string
-//so you need to use PQ#getisnull to determine
-PQ.prototype.getvalue = function(row, col) {
-  return this.$getvalue(row, col);
-};
-
-//returns true/false if the value is null
-PQ.prototype.getisnull = function(row, col) {
-  return this.$getisnull(row, col);
-};
-
-//returns the status of the command
-PQ.prototype.cmdStatus = function() {
-  return this.$cmdStatus();
-};
-
-//returns the tuples in the command
-PQ.prototype.cmdTuples = function() {
-  return this.$cmdTuples();
-};
-
-//starts the 'read ready' libuv socket listener.
-//Once the socket becomes readable, the PQ instance starts
-//emitting 'readable' events.  Similar to how node's readable-stream
-//works except to clear the SELECT() notification you need to call
-//PQ#consumeInput instead of letting node pull the data off the socket
-//http://www.postgresql.org/docs/9.1/static/libpq-async.html
-PQ.prototype.startReader = function() {
-  assert(this.connected, 'Must be connected to start reader');
-  this.$startRead();
-};
-
-//suspends the libuv socket 'read ready' listener
-PQ.prototype.stopReader = function() {
-  this.$stopRead();
-};
-
-PQ.prototype.writable = function(cb) {
-  assert(this.connected, 'Must be connected to start writer');
-  this.$startWrite();
-  return this.once('writable', cb);
-};
-
-//returns boolean - false indicates an error condition
-//e.g. a failure to consume input
-PQ.prototype.consumeInput = function() {
-  return this.$consumeInput();
-};
-
-//returns true if PQ#getResult would cause
-//the process to block waiting on results
-//false indicates PQ#getResult can be called
-//with an assurance of not blocking
-PQ.prototype.isBusy = function() {
-  return this.$isBusy();
-};
-
-//toggles the socket blocking on outgoing writes
-PQ.prototype.setNonBlocking = function(truthy) {
-  return this.$setNonBlocking(truthy ? 1 : 0);
-};
-
-//returns true if the connection is non-blocking on writes, otherwise false
-//note: connection is always non-blocking on reads if using the send* methods
-PQ.prototype.isNonBlocking = function() {
-  return this.$isNonBlocking();
-};
-
-//returns 1 if socket is not write-ready
-//returns 0 if all data flushed to socket
-//returns -1 if there is an error
-PQ.prototype.flush = function() {
-  return this.$flush();
-};
-
-//escapes a literal and returns the escaped string
-//I'm not 100% sure this doesn't do any I/O...need to check that
-PQ.prototype.escapeLiteral = function(input) {
-  if(!input) return input;
-  return this.$escapeLiteral(input);
-};
-
-PQ.prototype.escapeIdentifier = function(input) {
-  if(!input) return input;
-  return this.$escapeIdentifier(input);
-};
-
-//Checks for any notifications which may have arrivied
-//and returns them as a javascript object: {relname: 'string', extra: 'string', be_pid: int}
-//if there are no pending notifications this returns undefined
-PQ.prototype.notifies = function() {
-  return this.$notifies();
-};
-
-//Sends a buffer of binary data to the server
-//returns 1 if the command was sent successfully
-//returns 0 if the command would block (use PQ#writable here if so)
-//returns -1 if there was an error
-PQ.prototype.putCopyData = function(buffer) {
-  assert(buffer instanceof Buffer);
-  return this.$putCopyData(buffer);
-};
-
-//Sends a command to 'finish' the copy
-//if an error message is passed, it will be sent to the
-//backend and signal a request to cancel the copy in
-//returns 1 if sent succesfully
-//returns 0 if the command would block
-//returns -1 if there was an error
-PQ.prototype.putCopyEnd = function(errorMessage) {
-  if(errorMessage) {
-    return this.$putCopyEnd(errorMessage);
-  }
-  return this.$putCopyEnd();
-};
-
-//Gets a buffer of data from a copy out command
-//if async is passed as true it will not block waiting
-//for the result, otherwise this will BLOCK for a result.
-//returns a buffer if successful
-//returns 0 if copy is still in process (async only)
-//returns -1 if the copy is done
-//returns -2 if there was an error
-PQ.prototype.getCopyData = function(async) {
-  return this.$getCopyData(!!async);
-};
-
-PQ.prototype.cancel = function() {
-  return this.$cancel();
-};
-
-},
-"qffaFyIlqe0KpTmg1FdGSsiUKiEXeLQA9jQMuv99JF8=":
-function (require, module, exports, __dirname, __filename) {
-'use strict'
-/**
- * Copyright (c) 2010-2017 Brian Carlson (brian.m.carlson@gmail.com)
- * All rights reserved.
- *
- * This source code is licensed under the MIT license found in the
- * README.md file in the root directory of this source tree.
- */
-
-const crypto = require('crypto')
-
-const defaults = require('./defaults')
-
-function escapeElement(elementRepresentation) {
-  var escaped = elementRepresentation.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-
-  return '"' + escaped + '"'
-}
-
-// convert a JS array to a postgres array literal
-// uses comma separator so won't work for types like box that use
-// a different array separator.
-function arrayString(val) {
-  var result = '{'
-  for (var i = 0; i < val.length; i++) {
-    if (i > 0) {
-      result = result + ','
-    }
-    if (val[i] === null || typeof val[i] === 'undefined') {
-      result = result + 'NULL'
-    } else if (Array.isArray(val[i])) {
-      result = result + arrayString(val[i])
-    } else if (val[i] instanceof Buffer) {
-      result += '\\\\x' + val[i].toString('hex')
-    } else {
-      result += escapeElement(prepareValue(val[i]))
-    }
-  }
-  result = result + '}'
-  return result
-}
-
-// converts values from javascript types
-// to their 'raw' counterparts for use as a postgres parameter
-// note: you can override this function to provide your own conversion mechanism
-// for complex types, etc...
-var prepareValue = function (val, seen) {
-  if (val instanceof Buffer) {
-    return val
-  }
-  if (ArrayBuffer.isView(val)) {
-    var buf = Buffer.from(val.buffer, val.byteOffset, val.byteLength)
-    if (buf.length === val.byteLength) {
-      return buf
-    }
-    return buf.slice(val.byteOffset, val.byteOffset + val.byteLength) // Node.js v4 does not support those Buffer.from params
-  }
-  if (val instanceof Date) {
-    if (defaults.parseInputDatesAsUTC) {
-      return dateToStringUTC(val)
-    } else {
-      return dateToString(val)
-    }
-  }
-  if (Array.isArray(val)) {
-    return arrayString(val)
-  }
-  if (val === null || typeof val === 'undefined') {
-    return null
-  }
-  if (typeof val === 'object') {
-    return prepareObject(val, seen)
-  }
-  return val.toString()
-}
-
-function prepareObject(val, seen) {
-  if (val && typeof val.toPostgres === 'function') {
-    seen = seen || []
-    if (seen.indexOf(val) !== -1) {
-      throw new Error('circular reference detected while preparing "' + val + '" for query')
-    }
-    seen.push(val)
-
-    return prepareValue(val.toPostgres(prepareValue), seen)
-  }
-  return JSON.stringify(val)
-}
-
-function pad(number, digits) {
-  number = '' + number
-  while (number.length < digits) {
-    number = '0' + number
-  }
-  return number
-}
-
-function dateToString(date) {
-  var offset = -date.getTimezoneOffset()
-
-  var year = date.getFullYear()
-  var isBCYear = year < 1
-  if (isBCYear) year = Math.abs(year) + 1 // negative years are 1 off their BC representation
-
-  var ret =
-    pad(year, 4) +
-    '-' +
-    pad(date.getMonth() + 1, 2) +
-    '-' +
-    pad(date.getDate(), 2) +
-    'T' +
-    pad(date.getHours(), 2) +
-    ':' +
-    pad(date.getMinutes(), 2) +
-    ':' +
-    pad(date.getSeconds(), 2) +
-    '.' +
-    pad(date.getMilliseconds(), 3)
-
-  if (offset < 0) {
-    ret += '-'
-    offset *= -1
-  } else {
-    ret += '+'
-  }
-
-  ret += pad(Math.floor(offset / 60), 2) + ':' + pad(offset % 60, 2)
-  if (isBCYear) ret += ' BC'
-  return ret
-}
-
-function dateToStringUTC(date) {
-  var year = date.getUTCFullYear()
-  var isBCYear = year < 1
-  if (isBCYear) year = Math.abs(year) + 1 // negative years are 1 off their BC representation
-
-  var ret =
-    pad(year, 4) +
-    '-' +
-    pad(date.getUTCMonth() + 1, 2) +
-    '-' +
-    pad(date.getUTCDate(), 2) +
-    'T' +
-    pad(date.getUTCHours(), 2) +
-    ':' +
-    pad(date.getUTCMinutes(), 2) +
-    ':' +
-    pad(date.getUTCSeconds(), 2) +
-    '.' +
-    pad(date.getUTCMilliseconds(), 3)
-
-  ret += '+00:00'
-  if (isBCYear) ret += ' BC'
-  return ret
-}
-
-function normalizeQueryConfig(config, values, callback) {
-  // can take in strings or config objects
-  config = typeof config === 'string' ? { text: config } : config
-  if (values) {
-    if (typeof values === 'function') {
-      config.callback = values
-    } else {
-      config.values = values
-    }
-  }
-  if (callback) {
-    config.callback = callback
-  }
-  return config
-}
-
-const md5 = function (string) {
-  return crypto.createHash('md5').update(string, 'utf-8').digest('hex')
-}
-
-// See AuthenticationMD5Password at https://www.postgresql.org/docs/current/static/protocol-flow.html
-const postgresMd5PasswordHash = function (user, password, salt) {
-  var inner = md5(password + user)
-  var outer = md5(Buffer.concat([Buffer.from(inner), salt]))
-  return 'md5' + outer
-}
-
-module.exports = {
-  prepareValue: function prepareValueWrapper(value) {
-    // this ensures that extra arguments do not get passed into prepareValue
-    // by accident, eg: from calling values.map(utils.prepareValue)
-    return prepareValue(value)
-  },
-  normalizeQueryConfig,
-  postgresMd5PasswordHash,
-  md5,
-}
-
-},
-"tVVxm6d79sgDfESoEEFzAHFlVTJ5ohQ7WnNmlFl8BuA=":
-function (require, module, exports, __dirname, __filename) {
-'use strict'
-
-module.exports = function parseBytea (input) {
-  if (/^\\x/.test(input)) {
-    // new 'hex' style response (pg >9.0)
-    return new Buffer(input.substr(2), 'hex')
-  }
-  var output = ''
-  var i = 0
-  while (i < input.length) {
-    if (input[i] !== '\\') {
-      output += input[i]
-      ++i
-    } else {
-      if (/[0-7]{3}/.test(input.substr(i + 1, 3))) {
-        output += String.fromCharCode(parseInt(input.substr(i + 1, 3), 8))
-        i += 4
-      } else {
-        var backslashes = 1
-        while (i + backslashes < input.length && input[i + backslashes] === '\\') {
-          backslashes++
-        }
-        for (var k = 0; k < Math.floor(backslashes / 2); ++k) {
-          output += '\\'
-        }
-        i += Math.floor(backslashes / 2) * 2
-      }
-    }
-  }
-  return new Buffer(output, 'binary')
-}
-
-},
-"uGW+o3LS/8tJQqFwXtORD0j410qEDsQMVUhRUFMraPo=":
-function (require, module, exports, __dirname, __filename) {
-'use strict'
-/**
- * Copyright (c) 2010-2017 Brian Carlson (brian.m.carlson@gmail.com)
- * All rights reserved.
- *
- * This source code is licensed under the MIT license found in the
- * README.md file in the root directory of this source tree.
- */
-
-module.exports = {
-  // database host. defaults to localhost
-  host: 'localhost',
-
-  // database user's name
-  user: process.platform === 'win32' ? process.env.USERNAME : process.env.USER,
-
-  // name of database to connect
-  database: undefined,
-
-  // database user's password
-  password: null,
-
-  // a Postgres connection string to be used instead of setting individual connection items
-  // NOTE:  Setting this value will cause it to override any other value (such as database or user) defined
-  // in the defaults object.
-  connectionString: undefined,
-
-  // database port
-  port: 5432,
-
-  // number of rows to return at a time from a prepared statement's
-  // portal. 0 will return all rows at once
-  rows: 0,
-
-  // binary result mode
-  binary: false,
-
-  // Connection pool options - see https://github.com/brianc/node-pg-pool
-
-  // number of connections to use in connection pool
-  // 0 will disable connection pooling
-  max: 10,
-
-  // max milliseconds a client can go unused before it is removed
-  // from the pool and destroyed
-  idleTimeoutMillis: 30000,
-
-  client_encoding: '',
-
-  ssl: false,
-
-  application_name: undefined,
-
-  fallback_application_name: undefined,
-
-  options: undefined,
-
-  parseInputDatesAsUTC: false,
-
-  // max milliseconds any query using this connection will execute for before timing out in error.
-  // false=unlimited
-  statement_timeout: false,
-
-  // Terminate any session with an open transaction that has been idle for longer than the specified duration in milliseconds
-  // false=unlimited
-  idle_in_transaction_session_timeout: false,
-
-  // max milliseconds to wait for query to complete (client side)
-  query_timeout: false,
-
-  connect_timeout: 0,
-
-  keepalives: 1,
-
-  keepalives_idle: 0,
-}
-
-var pgTypes = require('pg-types')
-// save default parsers
-var parseBigInteger = pgTypes.getTypeParser(20, 'text')
-var parseBigIntegerArray = pgTypes.getTypeParser(1016, 'text')
-
-// parse int8 so you can get your count values as actual numbers
-module.exports.__defineSetter__('parseInt8', function (val) {
-  pgTypes.setTypeParser(20, 'text', val ? pgTypes.getTypeParser(23, 'text') : parseBigInteger)
-  pgTypes.setTypeParser(1016, 'text', val ? pgTypes.getTypeParser(1007, 'text') : parseBigIntegerArray)
-})
-
-},
-"vYEaUwAAUItrkMHbRiB44SLwQEdp1z9XrUH+kKyhWb0=":
-function (require, module, exports, __dirname, __filename) {
-var array = require('postgres-array')
-var arrayParser = require('./arrayParser');
-var parseDate = require('postgres-date');
-var parseInterval = require('postgres-interval');
-var parseByteA = require('postgres-bytea');
-
-function allowNull (fn) {
-  return function nullAllowed (value) {
-    if (value === null) return value
-    return fn(value)
-  }
-}
-
-function parseBool (value) {
-  if (value === null) return value
-  return value === 'TRUE' ||
-    value === 't' ||
-    value === 'true' ||
-    value === 'y' ||
-    value === 'yes' ||
-    value === 'on' ||
-    value === '1';
-}
-
-function parseBoolArray (value) {
-  if (!value) return null
-  return array.parse(value, parseBool)
-}
-
-function parseBaseTenInt (string) {
-  return parseInt(string, 10)
-}
-
-function parseIntegerArray (value) {
-  if (!value) return null
-  return array.parse(value, allowNull(parseBaseTenInt))
-}
-
-function parseBigIntegerArray (value) {
-  if (!value) return null
-  return array.parse(value, allowNull(function (entry) {
-    return parseBigInteger(entry).trim()
-  }))
-}
-
-var parsePointArray = function(value) {
-  if(!value) { return null; }
-  var p = arrayParser.create(value, function(entry) {
-    if(entry !== null) {
-      entry = parsePoint(entry);
-    }
-    return entry;
-  });
-
-  return p.parse();
-};
-
-var parseFloatArray = function(value) {
-  if(!value) { return null; }
-  var p = arrayParser.create(value, function(entry) {
-    if(entry !== null) {
-      entry = parseFloat(entry);
-    }
-    return entry;
-  });
-
-  return p.parse();
-};
-
-var parseStringArray = function(value) {
-  if(!value) { return null; }
-
-  var p = arrayParser.create(value);
-  return p.parse();
-};
-
-var parseDateArray = function(value) {
-  if (!value) { return null; }
-
-  var p = arrayParser.create(value, function(entry) {
-    if (entry !== null) {
-      entry = parseDate(entry);
-    }
-    return entry;
-  });
-
-  return p.parse();
-};
-
-var parseIntervalArray = function(value) {
-  if (!value) { return null; }
-
-  var p = arrayParser.create(value, function(entry) {
-    if (entry !== null) {
-      entry = parseInterval(entry);
-    }
-    return entry;
-  });
-
-  return p.parse();
-};
-
-var parseByteAArray = function(value) {
-  if (!value) { return null; }
-
-  return array.parse(value, allowNull(parseByteA));
-};
-
-var parseInteger = function(value) {
-  return parseInt(value, 10);
-};
-
-var parseBigInteger = function(value) {
-  var valStr = String(value);
-  if (/^\d+$/.test(valStr)) { return valStr; }
-  return value;
-};
-
-var parseJsonArray = function(value) {
-  if (!value) { return null; }
-
-  return array.parse(value, allowNull(JSON.parse));
-};
-
-var parsePoint = function(value) {
-  if (value[0] !== '(') { return null; }
-
-  value = value.substring( 1, value.length - 1 ).split(',');
-
-  return {
-    x: parseFloat(value[0])
-  , y: parseFloat(value[1])
-  };
-};
-
-var parseCircle = function(value) {
-  if (value[0] !== '<' && value[1] !== '(') { return null; }
-
-  var point = '(';
-  var radius = '';
-  var pointParsed = false;
-  for (var i = 2; i < value.length - 1; i++){
-    if (!pointParsed) {
-      point += value[i];
-    }
-
-    if (value[i] === ')') {
-      pointParsed = true;
-      continue;
-    } else if (!pointParsed) {
-      continue;
-    }
-
-    if (value[i] === ','){
-      continue;
-    }
-
-    radius += value[i];
-  }
-  var result = parsePoint(point);
-  result.radius = parseFloat(radius);
-
-  return result;
-};
-
-var init = function(register) {
-  register(20, parseBigInteger); // int8
-  register(21, parseInteger); // int2
-  register(23, parseInteger); // int4
-  register(26, parseInteger); // oid
-  register(700, parseFloat); // float4/real
-  register(701, parseFloat); // float8/double
-  register(16, parseBool);
-  register(1082, parseDate); // date
-  register(1114, parseDate); // timestamp without timezone
-  register(1184, parseDate); // timestamp
-  register(600, parsePoint); // point
-  register(651, parseStringArray); // cidr[]
-  register(718, parseCircle); // circle
-  register(1000, parseBoolArray);
-  register(1001, parseByteAArray);
-  register(1005, parseIntegerArray); // _int2
-  register(1007, parseIntegerArray); // _int4
-  register(1028, parseIntegerArray); // oid[]
-  register(1016, parseBigIntegerArray); // _int8
-  register(1017, parsePointArray); // point[]
-  register(1021, parseFloatArray); // _float4
-  register(1022, parseFloatArray); // _float8
-  register(1231, parseFloatArray); // _numeric
-  register(1014, parseStringArray); //char
-  register(1015, parseStringArray); //varchar
-  register(1008, parseStringArray);
-  register(1009, parseStringArray);
-  register(1040, parseStringArray); // macaddr[]
-  register(1041, parseStringArray); // inet[]
-  register(1115, parseDateArray); // timestamp without time zone[]
-  register(1182, parseDateArray); // _date
-  register(1185, parseDateArray); // timestamp with time zone[]
-  register(1186, parseInterval);
-  register(1187, parseIntervalArray);
-  register(17, parseByteA);
-  register(114, JSON.parse.bind(JSON)); // json
-  register(3802, JSON.parse.bind(JSON)); // jsonb
-  register(199, parseJsonArray); // json[]
-  register(3807, parseJsonArray); // jsonb[]
-  register(3907, parseStringArray); // numrange[]
-  register(2951, parseStringArray); // uuid[]
-  register(791, parseStringArray); // money[]
-  register(1183, parseStringArray); // time[]
-  register(1270, parseStringArray); // timetz[]
-};
-
-module.exports = {
-  init: init
-};
-
 },
 "xT9nq7mah+p1AVEl5xBCcx5MtfZjL98MVaTnPNdbyz8=":
 function (require, module, exports, __dirname, __filename) {
@@ -27927,7 +27870,7 @@ module.exports.warnTo = helper.warnTo;
     {}
   ],
   "server-dist/server.js": [
-    "fe4zainr6GPRUpZwjUoGKduiW/KTIRaYfGKNrR6lvE0=",
+    "wBhZd/SmfCxgNPnFSC8c+EQ7vGQcQ+b22yJ7QBe0XCw=",
     {
       "pg": "node_modules/pg/lib/index.js"
     }
