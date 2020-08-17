@@ -3,28 +3,25 @@ module Fundoscopic.Handlers where
 import Fundoscopic.Prelude
 
 import Biscotti.Cookie as Cookie
-
 import Data.Either (note)
-
+import Fundoscopic.DB as DB
+import Fundoscopic.Data.Fund as Fund
+import Fundoscopic.Data.User as User
+import Fundoscopic.Google.Sheets as Sheets
+import Fundoscopic.Middleware.Auth (AuthedRequest, tokenPayload)
+import Fundoscopic.Routing as Routes
+import Fundoscopic.Wrapper (rewrap)
+import JohnCowie.Data.Lens as L
 import JohnCowie.HTTPure (BasicRequest, Response, _val, redirect, response, setContentType, setCookie)
+import JohnCowie.JWT as JWT
 import JohnCowie.OAuth (OAuth, OAuthCode)
 import JohnCowie.OAuth.Google (GoogleConfig)
 import JohnCowie.PostgreSQL (DB)
-import JohnCowie.Data.Lens as L
-import JohnCowie.JWT as JWT
-
 import Text.Smolder.HTML (Html, html)
 import Text.Smolder.HTML as H
 import Text.Smolder.HTML.Attributes as A
 import Text.Smolder.Markup (text, (!))
 import Text.Smolder.Renderer.String (render)
-
-import Fundoscopic.Data.User as User
-import Fundoscopic.DB as DB
-import Fundoscopic.Routing as Routes
-import Fundoscopic.Middleware.Auth (AuthedRequest, tokenPayload)
-import Fundoscopic.Google.Sheets as Sheets
-import Fundoscopic.Wrapper (rewrap)
 
 htmlResponse :: forall e. Int -> Html e -> Response String
 htmlResponse status = render >>> response status >>> setContentType "text/html"
@@ -51,20 +48,24 @@ login oauth _ = pure $ htmlResponse 200 do
         H.h1 $ text "Login"
         H.a ! A.href oauth.redirect $ text "Login"
 
-{-
-TODO [ ] fetch accessToken from DB for user
-     [ ] make call to spreadsheet with config and accessToken
-     [ ] return values in raw response (just use show)
--}
-spreadsheet :: DB -> GoogleConfig -> AuthedRequest {sub :: User.UserId} Unit -> Aff (Either String (Response String))
+type SpreadsheetQueryParams = { spreadsheet_sheet_id :: String
+                              , sheet_name :: String}
+
+-- TODO support Error type for UserError | ServerError
+spreadsheet :: DB
+            -> GoogleConfig
+            -> AuthedRequest {sub :: User.UserId} (SpreadsheetQueryParams /\ Unit)
+            -> Aff (Either String (Response String))
 spreadsheet db googleConfig authedRequest = runExceptT do
   userM <- ExceptT $ map (lmap show) $ DB.retrieveUser sub db
   user <- ExceptT $ pure $ note ("No user found for token: Id = " <> (show (unwrap sub))) userM
   let accessToken = user.accessToken
       refreshToken = user.refreshToken
-  sheetData <- ExceptT $ Sheets.sheetValues googleConfig (rewrap accessToken) (rewrap refreshToken) "1WjWrck5uJYcLFvleNedzrWSx9vsEYMFEl1MuUc8x7PQ" "Game 1!A1:F5"
-  pure $ response 200 (show sheetData)
+  sheetData <- ExceptT $ Sheets.sheetValues googleConfig (rewrap accessToken) (rewrap refreshToken) spreadsheet_sheet_id (sheet_name <> "!A:B")
+  let processedData = Fund.readInvestments sheetData
+  pure $ response 200 (show processedData)
   where {sub} = tokenPayload authedRequest
+        ({sheet_name, spreadsheet_sheet_id} /\ _) = L.view _val authedRequest
 
 googleOauthCallback :: DB -> OAuth -> JWT.JWTGenerator {sub :: User.UserId} -> BasicRequest ({code :: OAuthCode} /\ Unit) -> Aff (Either String (Response String))
 googleOauthCallback db oauth jwtGen req = runExceptT do

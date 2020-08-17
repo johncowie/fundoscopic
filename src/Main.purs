@@ -60,6 +60,7 @@ lookupHandler deps = case _ of
                              ErrM.wrapHandleError serverErrorResponse $
                              H.googleOauthCallback deps.db deps.oauth.component deps.jwt
     R.SheetTest -> AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
+                   QP.wrapParseQueryParams (map pure errorsResponse) $
                    ErrM.wrapHandleError serverErrorResponse $
                    H.spreadsheet deps.db deps.oauth.config
 
