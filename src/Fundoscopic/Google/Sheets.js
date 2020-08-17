@@ -14,9 +14,9 @@ const {google} = require('googleapis');
 exports._auth = function(clientId) {
   return function(clientSecret) {
     return function(redirectUrl) {
-      return function(accessToken) {
+      return function(credentials) {
         const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUrl);
-        oAuth2Client.setCredentials({access_token: accessToken})
+        oAuth2Client.setCredentials(credentials)
         return oAuth2Client;
       }
     }

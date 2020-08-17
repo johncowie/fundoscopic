@@ -19,7 +19,7 @@ import Text.Smolder.HTML.Attributes as A
 import Text.Smolder.Markup (text, (!))
 import Text.Smolder.Renderer.String (render)
 
-import Fundoscopic.Domain.User as User
+import Fundoscopic.Data.User as User
 import Fundoscopic.DB as DB
 import Fundoscopic.Routing as Routes
 import Fundoscopic.Middleware.Auth (AuthedRequest, tokenPayload)
@@ -61,7 +61,8 @@ spreadsheet db googleConfig authedRequest = runExceptT do
   userM <- ExceptT $ map (lmap show) $ DB.retrieveUser sub db
   user <- ExceptT $ pure $ note ("No user found for token: Id = " <> (show (unwrap sub))) userM
   let accessToken = user.accessToken
-  sheetData <- ExceptT $ Sheets.sheetValues googleConfig (rewrap accessToken) "1WjWrck5uJYcLFvleNedzrWSx9vsEYMFEl1MuUc8x7PQ" "Game 1!A1:F5"
+      refreshToken = user.refreshToken
+  sheetData <- ExceptT $ Sheets.sheetValues googleConfig (rewrap accessToken) (rewrap refreshToken) "1WjWrck5uJYcLFvleNedzrWSx9vsEYMFEl1MuUc8x7PQ" "Game 1!A1:F5"
   pure $ response 200 (show sheetData)
   where {sub} = tokenPayload authedRequest
 
@@ -69,7 +70,7 @@ googleOauthCallback :: DB -> OAuth -> JWT.JWTGenerator {sub :: User.UserId} -> B
 googleOauthCallback db oauth jwtGen req = runExceptT do
   userData <- ExceptT $ oauth.handleCode code
   -- FIXME google should return accessToken
-  let newUser = User.newUser userData.name (User.newGoogleId userData.sub) (User.newGoogleAccessToken userData.accessToken)
+  let newUser = User.newUser userData.name (User.newGoogleId userData.sub) (User.newGoogleAccessToken userData.accessToken) (wrap userData.refreshToken)
   userId <- ExceptT $ map (lmap show) $ DB.upsertUser newUser db
   (token :: JWT.JWT) <- ExceptT $ liftEffect $ map Right $ jwtGen.generate {sub: userId}
   let cookie = Cookie.new "accesstoken" (unwrap token) # Cookie.setHttpOnly -- # Cookie.setSecure FIXME do his

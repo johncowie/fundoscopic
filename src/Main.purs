@@ -6,7 +6,7 @@ import Data.String as Str
 import Effect.Console as Console
 import Envisage (Var, Component, mkComponent, defaultTo, describe, readEnv, showParsed, var)
 import Envisage.Console (printErrorsForConsole)
-import Fundoscopic.Domain.User as User
+import Fundoscopic.Data.User as User
 import Fundoscopic.Handlers as H
 import Fundoscopic.Middleware.Auth as AuthM
 import Fundoscopic.Middleware.Log as LogM
@@ -102,7 +102,7 @@ main' mode = launchAff_ $ logError $ runExceptT do
     {oauth, server, dbE, jwt} <- ExceptT $ pure $ lmap printErrorsForConsole $ readEnv env {
       oauth: case mode of
         Dev -> stubGoogleOAuth
-        Prod -> Google.oauth
+        Prod -> Google.oauth {additionalScopes: [Google.SpreadSheets]}
     , server: serverConfig
     , dbE: dbComponent "postgres://localhost:5432/fundoscopic"
     , jwt: jwtComponent

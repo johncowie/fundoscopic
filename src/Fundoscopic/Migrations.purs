@@ -27,9 +27,18 @@ createOAuthUserTable id = {id, up, down, description}
         """
         description = ""
 
+addRefreshTokenColumn :: Int -> Migration Int String
+addRefreshTokenColumn id = {id, up, down, description}
+  where up = """ALTER TABLE users
+                ADD COLUMN refresh_token VARCHAR;
+             """
+        down = """ALTER TABLE users DROP COLUMN refresh_token"""
+        description = "Add refresh token column"
+
 migrations :: Array (Migration Int String)
 migrations = [
   createOAuthUserTable 1
+, addRefreshTokenColumn 2
 ]
 
 migrationStore :: forall m. (Monad m) => MigrationStore m Int String
