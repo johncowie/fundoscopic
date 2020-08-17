@@ -2,7 +2,7 @@ module Fundoscopic.Data.Fund where
 
 import Fundoscopic.Prelude
 import Data.String as Str
-import Data.List(List(..), (:), (!!), elemIndex, filter, fromFoldable)
+import Data.List (elemIndex, filter, fromFoldable, (!!), toUnfoldable)
 import Data.Foldable (all)
 import Data.Number as Number
 import Data.Either (note)
@@ -13,7 +13,7 @@ type Investment = {
 , value :: Number
 }
 
-type Fund = {name :: String, investments :: List Investment}
+type Fund = {name :: String, investments :: Array Investment}
 
 headerPosition :: String -> List String -> Either String Int
 headerPosition header = map Str.toLower >>> elemIndex (Str.toLower header) >>> note ("No column with header " <> header)
@@ -27,7 +27,7 @@ gatherRowValues {fundNamePos, fundValuePos} row = do
 toColumns :: List (List String) -> Either String (List (Tuple String String))
 toColumns Nil = Left "Sheet has no data"
 toColumns (headers:rows) = do
-  fundNamePos <- headerPosition "Fund name" headers
+  fundNamePos <- headerPosition "Investment" headers
   fundValuePos <- headerPosition "value" headers
   for rows (gatherRowValues {fundNamePos, fundValuePos})
 
@@ -38,20 +38,20 @@ removeBlankRows :: List (List String) -> List (List String)
 removeBlankRows = filter (not (all isBlankString))
 
 nonEmptyString :: String -> Either String String
-nonEmptyString "" = Left "Fund name cannot be empty"
+nonEmptyString "" = Left "Investment name cannot be empty"
 nonEmptyString s = Right s
 
 notEmpty :: forall a. List a -> Either String (List a)
-notEmpty Nil = Left "Funds cannot be empty"
+notEmpty Nil = Left "Investments cannot be empty"
 notEmpty arr = Right arr
 
 readNumber :: String -> Either String Number
-readNumber s = note ("[" <> s <> "] is not a valid fund value") $ Number.fromString s
+readNumber s = note ("[" <> s <> "] is not a valid investment value") $ Number.fromString s
 
 posNumber :: Number -> Either String Number
 posNumber n
   | n >= 0.0 = Right n
-  | otherwise = Left $ "Fund value cannot be negative - was " <> show n
+  | otherwise = Left $ "Investment value cannot be negative - was " <> show n
 
 readInvestment :: Tuple String String -> Either String Investment
 readInvestment (Tuple investmentNameStr valueStr) = do
@@ -64,6 +64,9 @@ readInvestments' = removeBlankRows >>> toColumns >=> (map readInvestment >>> seq
 
 readInvestments :: Array (Array String) -> Either String (List Investment)
 readInvestments = aToL >>> readInvestments'
+
+mkFund :: String -> List Investment -> Fund
+mkFund name investments = {name, investments: toUnfoldable investments}
 
 aToL :: Array (Array String) -> List (List String)
 aToL = map fromFoldable >>> fromFoldable

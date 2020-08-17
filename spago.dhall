@@ -16,6 +16,7 @@ You can edit this file as you like.
   , "psci-support"
   , "record"
   , "smolder"
+  , "template-strings"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs", "test/**/*.purs" ]

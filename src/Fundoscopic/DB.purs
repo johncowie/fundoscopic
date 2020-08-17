@@ -1,10 +1,14 @@
 module Fundoscopic.DB where
 
+import Data.String as Str
 import Fundoscopic.Prelude
 import Fundoscopic.Data.User (NewUser, UserId, User, newUser, withId)
+import Fundoscopic.Data.Fund (Investment, Fund)
 import JohnCowie.PostgreSQL (runQuery, DB)
 import Database.PostgreSQL.PG as PG
-import Database.PostgreSQL.Row (Row1(Row1))
+import Database.PostgreSQL.Row (Row0(Row0), Row1(Row1))
+import Database.PostgreSQL.Value (toSQLValue)
+import Foreign (unsafeFromForeign)
 
 upsertUser :: NewUser -> DB -> Aff (Either PG.PGError UserId)
 upsertUser user =
@@ -30,5 +34,55 @@ retrieveUser userId =
       """
     ) (Row1 userId)
     case rows of
-      [ (googleId /\ name  /\ accessToken /\ refreshToken)] -> pure $ Just $ withId userId $ newUser googleId name accessToken refreshToken
+      [ (googleId /\ name  /\ accessToken /\ refreshToken) ] -> pure $ Just $ withId userId $ newUser googleId name accessToken refreshToken
       _ -> pure $ Nothing
+
+deleteFund :: String -> DB -> Aff (Either PG.PGError Unit)
+deleteFund fundName = do
+  flip runQuery \conn -> do
+    PG.execute conn (PG.Query """
+      DELETE FROM investments WHERE local_authority = $1;
+    """) (Row1 fundName)
+
+investmentToRow :: String -> Investment -> Array SQLValueString
+investmentToRow fundName investment  = [showSQLValue fundName,
+                                        showSQLValue 2020,
+                                        showSQLValue investment.name,
+                                        showSQLValue (investment.value)]
+
+insertFund :: Fund -> DB -> Aff (Either PG.PGError Unit)
+insertFund fund = do
+  flip runQuery \conn -> do
+    PG.execute conn (
+      bulkInsert
+        "investments"
+        ["local_authority", "year", "investment", "value"]
+        (investmentToRow fund.name)
+        fund.investments) Row0
+
+upsertFund :: Fund -> DB -> Aff (Either PG.PGError Unit)
+upsertFund fund db = runExceptT $ do
+  ExceptT $ deleteFund fund.name db
+  ExceptT $ insertFund fund db
+
+-----
+
+bulkInsert :: forall a .String -> Array String -> (a -> Array SQLValueString) -> Array a -> PG.Query Row0 Row0
+bulkInsert tableName columns rowF rows = PG.Query $ """
+  INSERT INTO ${tableName} (${columns})
+  VALUES ${values};
+  """ <^> ["tableName" /\ tableName, "columns" /\ columnNames, "values" /\ values]
+  where values = Str.joinWith ", \n" $ map rowStr rows
+        rowStr row = "(" <> (Str.joinWith ", " $ map showSVS $ rowF row) <> ")"
+        columnNames = Str.joinWith ", " columns
+
+data SQLValueString = SQLValueString String
+
+showSVS :: SQLValueString -> String
+showSVS (SQLValueString s) = s
+
+class ShowSQLValue a where showSQLValue :: a -> SQLValueString
+
+instance showSQLValueString :: ShowSQLValue String where showSQLValue s = SQLValueString $ "\'" <> s <>  "\'"
+instance showSQLValueNumber :: ShowSQLValue Number where showSQLValue = SQLValueString <<< show
+instance showSQLValueInt :: ShowSQLValue Int where showSQLValue = SQLValueString <<< show

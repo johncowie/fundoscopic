@@ -8,6 +8,7 @@ import Envisage (Var, Component, mkComponent, defaultTo, describe, readEnv, show
 import Envisage.Console (printErrorsForConsole)
 import Fundoscopic.Data.User as User
 import Fundoscopic.Handlers as H
+import Fundoscopic.Error (jsonErrorResponse)
 import Fundoscopic.Middleware.Auth as AuthM
 import Fundoscopic.Middleware.Log as LogM
 import Fundoscopic.Migrations (migrationStore)
@@ -16,6 +17,7 @@ import JohnCowie.Data.Lens as L
 import JohnCowie.HTTPure (class IsRequest, BasicRequest, Response, _path, serve', response, redirect)
 import JohnCowie.HTTPure.Middleware.Error as ErrM
 import JohnCowie.HTTPure.Middleware.QueryParams as QP
+import JohnCowie.HTTPure.Middleware.JSON as JsonM
 import JohnCowie.JWT (JWTGenerator, jwtGenerator)
 import JohnCowie.Migrations (Migrator, migrate)
 import JohnCowie.OAuth (OAuth)
@@ -43,7 +45,7 @@ errorsResponse = Str.joinWith "\n" >>> response 400
 serverErrorResponse :: String -> Aff (Response String)
 serverErrorResponse err = do
   liftEffect $ Console.error err
-  pure $ response 500 "Server Error"
+  pure $ response 500 "A server error"
 
 loginRedirect :: Response String
 loginRedirect = redirect (R.routeForHandler R.Login)
@@ -61,7 +63,8 @@ lookupHandler deps = case _ of
                              H.googleOauthCallback deps.db deps.oauth.component deps.jwt
     R.SheetTest -> AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
                    QP.wrapParseQueryParams (map pure errorsResponse) $
-                   ErrM.wrapHandleError serverErrorResponse $
+                   JsonM.wrapJsonResponse $
+                   ErrM.wrapHandleError jsonErrorResponse $
                    H.spreadsheet deps.db deps.oauth.config
 
 app :: forall req res. (IsRequest req) => (Maybe R.HandlerId -> req Unit -> res) -> req Unit -> res

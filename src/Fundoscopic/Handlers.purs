@@ -4,9 +4,12 @@ import Fundoscopic.Prelude
 
 import Biscotti.Cookie as Cookie
 import Data.Either (note)
+import Data.Argonaut.Core (Json)
+import Data.Argonaut.Encode (encodeJson)
 import Fundoscopic.DB as DB
 import Fundoscopic.Data.Fund as Fund
 import Fundoscopic.Data.User as User
+import Fundoscopic.Error (HttpError, toServerError, toUserError)
 import Fundoscopic.Google.Sheets as Sheets
 import Fundoscopic.Middleware.Auth (AuthedRequest, tokenPayload)
 import Fundoscopic.Routing as Routes
@@ -49,23 +52,25 @@ login oauth _ = pure $ htmlResponse 200 do
         H.a ! A.href oauth.redirect $ text "Login"
 
 type SpreadsheetQueryParams = { spreadsheet_sheet_id :: String
-                              , sheet_name :: String}
+                              , sheet_name :: String
+                              , fund_name :: String }
 
--- TODO support Error type for UserError | ServerError
 spreadsheet :: DB
             -> GoogleConfig
             -> AuthedRequest {sub :: User.UserId} (SpreadsheetQueryParams /\ Unit)
-            -> Aff (Either String (Response String))
+            -> Aff (Either HttpError (Response Json))
 spreadsheet db googleConfig authedRequest = runExceptT do
-  userM <- ExceptT $ map (lmap show) $ DB.retrieveUser sub db
-  user <- ExceptT $ pure $ note ("No user found for token: Id = " <> (show (unwrap sub))) userM
+  userM <- toServerError $ ExceptT $ map (lmap show) $ DB.retrieveUser sub db
+  user <- toServerError $ ExceptT $ pure $ note ("No user found for token: Id = " <> (show (unwrap sub))) userM
   let accessToken = user.accessToken
       refreshToken = user.refreshToken
-  sheetData <- ExceptT $ Sheets.sheetValues googleConfig (rewrap accessToken) (rewrap refreshToken) spreadsheet_sheet_id (sheet_name <> "!A:B")
-  let processedData = Fund.readInvestments sheetData
-  pure $ response 200 (show processedData)
+  sheetData <-  ExceptT $ map Sheets.refineSheetErrors $ Sheets.sheetValues googleConfig (rewrap accessToken) (rewrap refreshToken) spreadsheet_sheet_id (sheet_name <> "!A:B")
+  investments <- toUserError $ ExceptT $ pure $ Fund.readInvestments sheetData
+  let fund = Fund.mkFund fund_name investments
+  toServerError $ ExceptT $ map (lmap show) $ DB.upsertFund fund db
+  pure $ response 200 (encodeJson fund)
   where {sub} = tokenPayload authedRequest
-        ({sheet_name, spreadsheet_sheet_id} /\ _) = L.view _val authedRequest
+        ({sheet_name, spreadsheet_sheet_id, fund_name} /\ _) = L.view _val authedRequest
 
 googleOauthCallback :: DB -> OAuth -> JWT.JWTGenerator {sub :: User.UserId} -> BasicRequest ({code :: OAuthCode} /\ Unit) -> Aff (Either String (Response String))
 googleOauthCallback db oauth jwtGen req = runExceptT do

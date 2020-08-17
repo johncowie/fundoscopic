@@ -35,10 +35,23 @@ addRefreshTokenColumn id = {id, up, down, description}
         down = """ALTER TABLE users DROP COLUMN refresh_token"""
         description = "Add refresh token column"
 
+createInvestmentsTable :: Int -> Migration Int String
+createInvestmentsTable id = {id, up, down, description}
+  where up = """CREATE TABLE IF NOT EXISTS investments (
+                  local_authority VARCHAR NOT NULL
+                , year SMALLINT NOT NULL
+                , investment VARCHAR NOT NULL
+                , value NUMERIC NOT NULL
+                );
+                """
+        down = """DROP TABLE IF EXISTS investments;"""
+        description = "Create investments table"
+
 migrations :: Array (Migration Int String)
 migrations = [
   createOAuthUserTable 1
 , addRefreshTokenColumn 2
+, createInvestmentsTable 3
 ]
 
 migrationStore :: forall m. (Monad m) => MigrationStore m Int String

@@ -154,6 +154,11 @@ let additions =
               "https://github.com/rightfold/purescript-postgresql-client.git"
           , version = "v3.0.2"
           }
+      , template-strings =
+          { dependencies = [ "tuples", "functions" ]
+          , repo = "https://github.com/purescripters/purescript-template-strings"
+          , version = "v5.1.0"
+          }
       , envisage =
           { dependencies =
             [ "console"
