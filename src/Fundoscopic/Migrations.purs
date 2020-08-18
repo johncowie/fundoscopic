@@ -1,7 +1,7 @@
 module Fundoscopic.Migrations where
 
 import Fundoscopic.Prelude
-import JohnCowie.Migrations (MigrationStore, Migration, Migrator, migrate)
+import JohnCowie.Migrations (MigrationStore, Migration, Migrator, migrate, revert)
 import JohnCowie.PostgreSQL (dbComponent, DB)
 import JohnCowie.PostgreSQL.Migrations (executor, intVersionStore)
 
@@ -47,11 +47,33 @@ createInvestmentsTable id = {id, up, down, description}
         down = """DROP TABLE IF EXISTS investments;"""
         description = "Create investments table"
 
+createInvestmentsTableV2 :: Int -> Migration Int String
+createInvestmentsTableV2 id = {id, up, down, description}
+  where up = """CREATE TABLE IF NOT EXISTS investments (
+                  local_authority VARCHAR NOT NULL
+                , year SMALLINT NOT NULL
+                , investment VARCHAR NOT NULL
+                , holding REAL NOT NULL
+                );
+                """
+        down = """DROP TABLE IF EXISTS investments;"""
+        description = "Create investments table"
+
+
+renameValueCol :: Int -> Migration Int String
+renameValueCol id = {id, up, down, description}
+  where up = "ALTER TABLE investments RENAME COLUMN value TO holding;"
+        down = "ALTER TABLE investments RENAME COLUMN holding TO value;"
+        description = "Rename investment value column to holding"
+
 migrations :: Array (Migration Int String)
 migrations = [
   createOAuthUserTable 1
 , addRefreshTokenColumn 2
 , createInvestmentsTable 3
+, renameValueCol 4
+, revert (createInvestmentsTable 3) 5
+, createInvestmentsTableV2 6
 ]
 
 migrationStore :: forall m. (Monad m) => MigrationStore m Int String

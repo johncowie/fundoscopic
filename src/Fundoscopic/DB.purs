@@ -48,7 +48,7 @@ investmentToRow :: String -> Investment -> Array SQLValueString
 investmentToRow fundName investment  = [showSQLValue fundName,
                                         showSQLValue 2020,
                                         showSQLValue investment.name,
-                                        showSQLValue (investment.value)]
+                                        showSQLValue investment.value]
 
 upsertFund :: Fund -> DB -> Aff (Either PG.PGError Unit)
 upsertFund fund = do
@@ -59,7 +59,7 @@ upsertFund fund = do
     PG.execute conn (
       bulkInsert
         "investments"
-        ["local_authority", "year", "investment", "value"]
+        ["local_authority", "year", "investment", "holding"]
         (investmentToRow fund.name)
         fund.investments) Row0
 
@@ -67,12 +67,12 @@ retrieveFund :: String -> DB -> Aff (Either PG.PGError (Maybe Fund))
 retrieveFund fundName = do
   flip runQuery \conn -> do
     rows <- PG.query conn (PG.Query """
-      SELECT investment, value FROM investments
+      SELECT investment, holding FROM investments
       WHERE local_authority = $1;
     """) (Row1 fundName)
     case rows of
       [] -> pure Nothing
-      fundRows -> do
+      (fundRows :: Array (String /\ Number)) -> do
         pure $ Just {name: fundName, investments}
         where investments = map (\(investment /\ value) -> {name: investment, value: value}) fundRows
 

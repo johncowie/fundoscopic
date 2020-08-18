@@ -16,6 +16,7 @@ You can edit this file as you like.
   , "psci-support"
   , "record"
   , "smolder"
+  , "spec"
   , "template-strings"
   ]
 , packages = ./packages.dhall
