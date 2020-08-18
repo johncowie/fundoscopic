@@ -14,7 +14,7 @@ import Fundoscopic.Middleware.Log as LogM
 import Fundoscopic.Migrations (migrationStore)
 import Fundoscopic.Routing as R
 import JohnCowie.Data.Lens as L
-import JohnCowie.HTTPure (class IsRequest, BasicRequest, Response, _path, serve', response, redirect)
+import JohnCowie.HTTPure (class IsRequest, BasicRequest, Response, _path, _method, serve', response, redirect)
 import JohnCowie.HTTPure.Middleware.Error as ErrM
 import JohnCowie.HTTPure.Middleware.QueryParams as QP
 import JohnCowie.HTTPure.Middleware.JSON as JsonM
@@ -65,12 +65,13 @@ lookupHandler deps = case _ of
                    QP.wrapParseQueryParams (map pure errorsResponse) $
                    JsonM.wrapJsonResponse $
                    ErrM.wrapHandleError jsonErrorResponse $
-                   H.spreadsheet deps.db deps.oauth.config
+                   H.downloadSpreadsheet deps.db deps.oauth.config
 
 app :: forall req res. (IsRequest req) => (Maybe R.HandlerId -> req Unit -> res) -> req Unit -> res
 app handlerLookup req = (handlerLookup handlerId) req
-  where handlerId = R.handlerIdForPath path
+  where handlerId = R.handlerIdForPath method path
         path = L.view _path req
+        method = L.view _method req
 
 type Deps = { oauth :: {component :: OAuth, config :: Google.GoogleConfig}
             , server :: {port :: Int}

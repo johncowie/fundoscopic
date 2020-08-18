@@ -11,17 +11,18 @@ where
 import Fundoscopic.Prelude
 -- import Data.Map as M
 import Data.String as Str
+import HTTPure (Method(..))
 
 -- type Routes = BiMap HandlerId (Array String)
 
 data HandlerId = Home | Login | GoogleOAuthCallback | SheetTest
 
-handlerIdForPath :: Array String -> Maybe HandlerId
-handlerIdForPath ["login"] = Just Login
-handlerIdForPath ["google"] = Just GoogleOAuthCallback
-handlerIdForPath ["sheet"] = Just SheetTest
-handlerIdForPath [] = Just Home
-handlerIdForPath _ = Nothing
+handlerIdForPath :: Method -> Array String -> Maybe HandlerId
+handlerIdForPath Get ["login"] = Just Login
+handlerIdForPath Get ["google"] = Just GoogleOAuthCallback
+handlerIdForPath _ ["sheet"] = Just SheetTest -- FIXME restrict to Post
+handlerIdForPath Get [] = Just Home
+handlerIdForPath _ _ = Nothing
 
 routeForHandler :: HandlerId -> String
 routeForHandler Login = joinPath ["login"]

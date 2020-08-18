@@ -7,9 +7,10 @@ import Data.Either (note)
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Encode (encodeJson)
 import Fundoscopic.DB as DB
+import Fundoscopic.Data.Percentage (Percentage)
 import Fundoscopic.Data.Fund as Fund
 import Fundoscopic.Data.User as User
-import Fundoscopic.Error (HttpError, toServerError, toUserError)
+import Fundoscopic.Error (HttpError, toServerError, toUserError, serverError)
 import Fundoscopic.Google.Sheets as Sheets
 import Fundoscopic.Middleware.Auth (AuthedRequest, tokenPayload)
 import Fundoscopic.Routing as Routes
@@ -55,11 +56,11 @@ type SpreadsheetQueryParams = { spreadsheet_sheet_id :: String
                               , sheet_name :: String
                               , fund_name :: String }
 
-spreadsheet :: DB
+downloadSpreadsheet :: DB
             -> GoogleConfig
             -> AuthedRequest {sub :: User.UserId} (SpreadsheetQueryParams /\ Unit)
             -> Aff (Either HttpError (Response Json))
-spreadsheet db googleConfig authedRequest = runExceptT do
+downloadSpreadsheet db googleConfig authedRequest = runExceptT do
   userM <- toServerError $ ExceptT $ map (lmap show) $ DB.retrieveUser sub db
   user <- toServerError $ ExceptT $ pure $ note ("No user found for token: Id = " <> (show (unwrap sub))) userM
   let accessToken = user.accessToken
@@ -68,9 +69,14 @@ spreadsheet db googleConfig authedRequest = runExceptT do
   investments <- toUserError $ ExceptT $ pure $ Fund.readInvestments sheetData
   let fund = Fund.mkFund fund_name investments
   toServerError $ ExceptT $ map (lmap show) $ DB.upsertFund fund db
-  pure $ response 200 (encodeJson fund)
+  pure $ response 200 $ encodeJson {message: "Successfully loaded sheet"}
   where {sub} = tokenPayload authedRequest
         ({sheet_name, spreadsheet_sheet_id, fund_name} /\ _) = L.view _val authedRequest
+
+type NewTagQueryParams = { percentage :: Maybe Percentage }
+
+addTag :: AuthedRequest {sub :: User.UserId} (NewTagQueryParams /\ Unit) -> Aff (Either String (Response Json))
+addTag req = pure $ Left "unimplemented"
 
 googleOauthCallback :: DB -> OAuth -> JWT.JWTGenerator {sub :: User.UserId} -> BasicRequest ({code :: OAuthCode} /\ Unit) -> Aff (Either String (Response String))
 googleOauthCallback db oauth jwtGen req = runExceptT do
