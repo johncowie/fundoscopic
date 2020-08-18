@@ -66,6 +66,16 @@ renameValueCol id = {id, up, down, description}
         down = "ALTER TABLE investments RENAME COLUMN holding TO value;"
         description = "Rename investment value column to holding"
 
+createTagsTable :: Int -> Migration Int String
+createTagsTable id = {id, up, down, description}
+  where up = """CREATE TABLE IF NOT EXISTS tags (
+                  name VARCHAR NOT NULL
+                , percentage SMALLINT CHECK (percentage >= 0 AND percentage <= 100)
+                , creator INT REFERENCES users (id)
+             );"""
+        down = "DROP TABLE IF EXISTS tags;"
+        description = "Create tags table"
+
 migrations :: Array (Migration Int String)
 migrations = [
   createOAuthUserTable 1
@@ -74,6 +84,7 @@ migrations = [
 , renameValueCol 4
 , revert (createInvestmentsTable 3) 5
 , createInvestmentsTableV2 6
+, createTagsTable 7
 ]
 
 migrationStore :: forall m. (Monad m) => MigrationStore m Int String
