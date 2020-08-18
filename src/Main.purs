@@ -2,13 +2,15 @@ module Main where
 
 import Fundoscopic.Prelude
 
+import Data.Argonaut.Core (Json)
+import Data.Argonaut.Encode (encodeJson)
 import Data.String as Str
 import Effect.Console as Console
 import Envisage (Var, Component, mkComponent, defaultTo, describe, readEnv, showParsed, var)
 import Envisage.Console (printErrorsForConsole)
 import Fundoscopic.Data.User as User
 import Fundoscopic.Handlers as H
-import Fundoscopic.Error (jsonErrorResponse)
+import Fundoscopic.Error (jsonErrorResponse, serverError)
 import Fundoscopic.Middleware.Auth as AuthM
 import Fundoscopic.Middleware.Log as LogM
 import Fundoscopic.Migrations (migrationStore)
@@ -47,6 +49,17 @@ serverErrorResponse err = do
   liftEffect $ Console.error err
   pure $ response 500 "A server error"
 
+notFoundJson :: forall req m. (Monad m) => req -> m (Response Json)
+notFoundJson _ = pure $ response 404 $ encodeJson {message: "Not Found"}
+
+-- TODO move into utils
+wrapNotFound :: forall m req res. (Monad m) => (req -> m res) -> (req -> m (Maybe res)) -> req -> m res
+wrapNotFound notFoundHandler handler req = do
+  resM <- handler req
+  case resM of
+    (Just res) -> pure res
+    Nothing -> notFoundHandler req
+
 loginRedirect :: Response String
 loginRedirect = redirect (R.routeForHandler R.Login)
 
@@ -61,11 +74,16 @@ lookupHandler deps = case _ of
     R.GoogleOAuthCallback -> QP.wrapParseQueryParams (map pure errorsResponse) $
                              ErrM.wrapHandleError serverErrorResponse $
                              H.googleOauthCallback deps.db deps.oauth.component deps.jwt
-    R.SheetTest -> AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
-                   QP.wrapParseQueryParams (map pure errorsResponse) $
-                   JsonM.wrapJsonResponse $
-                   ErrM.wrapHandleError jsonErrorResponse $
-                   H.downloadSpreadsheet deps.db deps.oauth.config
+    R.DownloadSpreadsheet -> AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
+                             QP.wrapParseQueryParams (map pure errorsResponse) $
+                             JsonM.wrapJsonResponse $
+                             ErrM.wrapHandleError jsonErrorResponse $
+                             H.downloadSpreadsheet deps.db deps.oauth.config
+    (R.ShowFund fundName) -> AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
+                             JsonM.wrapJsonResponse $
+                             wrapNotFound notFoundJson $
+                             ErrM.wrapHandleError (serverError >>> jsonErrorResponse >>> map Just) $
+                             H.showFund fundName deps.db
 
 app :: forall req res. (IsRequest req) => (Maybe R.HandlerId -> req Unit -> res) -> req Unit -> res
 app handlerLookup req = (handlerLookup handlerId) req

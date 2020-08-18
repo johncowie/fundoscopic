@@ -57,9 +57,9 @@ type SpreadsheetQueryParams = { spreadsheet_sheet_id :: String
                               , fund_name :: String }
 
 downloadSpreadsheet :: DB
-            -> GoogleConfig
-            -> AuthedRequest {sub :: User.UserId} (SpreadsheetQueryParams /\ Unit)
-            -> Aff (Either HttpError (Response Json))
+                    -> GoogleConfig
+                    -> AuthedRequest {sub :: User.UserId} (SpreadsheetQueryParams /\ Unit)
+                    -> Aff (Either HttpError (Response Json))
 downloadSpreadsheet db googleConfig authedRequest = runExceptT do
   userM <- toServerError $ ExceptT $ map (lmap show) $ DB.retrieveUser sub db
   user <- toServerError $ ExceptT $ pure $ note ("No user found for token: Id = " <> (show (unwrap sub))) userM
@@ -72,6 +72,14 @@ downloadSpreadsheet db googleConfig authedRequest = runExceptT do
   pure $ response 200 $ encodeJson {message: "Successfully loaded sheet"}
   where {sub} = tokenPayload authedRequest
         ({sheet_name, spreadsheet_sheet_id, fund_name} /\ _) = L.view _val authedRequest
+
+showFund :: String
+         -> DB
+         -> AuthedRequest {sub :: User.UserId} Unit
+         -> Aff (Either String (Maybe (Response Json)))
+showFund fundName db _ = runExceptT do
+  fundM <- ExceptT $ map (lmap show) $ DB.retrieveFund fundName db
+  pure $ (response 200 <<< encodeJson) <$> fundM
 
 type NewTagQueryParams = { percentage :: Maybe Percentage }
 

@@ -27,4 +27,6 @@ plainErrorResponse (ServerError err) = do
 
 jsonErrorResponse :: HttpError -> Aff (Response Json)
 jsonErrorResponse (UserError err) = pure $ response 400 $ encodeJson {error: err}
-jsonErrorResponse (ServerError err) = pure $ response 500 $ encodeJson {error: "server error"}
+jsonErrorResponse (ServerError err) = do
+  liftEffect $ console.error err
+  pure $ response 500 $ encodeJson {error: "server error"}

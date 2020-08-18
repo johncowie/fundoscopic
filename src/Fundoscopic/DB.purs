@@ -50,9 +50,12 @@ investmentToRow fundName investment  = [showSQLValue fundName,
                                         showSQLValue investment.name,
                                         showSQLValue (investment.value)]
 
-insertFund :: Fund -> DB -> Aff (Either PG.PGError Unit)
-insertFund fund = do
+upsertFund :: Fund -> DB -> Aff (Either PG.PGError Unit)
+upsertFund fund = do
   flip runQuery \conn -> do
+    PG.execute conn (PG.Query """
+        DELETE FROM investments WHERE local_authority = $1;
+    """) (Row1 fund.name)
     PG.execute conn (
       bulkInsert
         "investments"
@@ -60,10 +63,18 @@ insertFund fund = do
         (investmentToRow fund.name)
         fund.investments) Row0
 
-upsertFund :: Fund -> DB -> Aff (Either PG.PGError Unit)
-upsertFund fund db = runExceptT $ do
-  ExceptT $ deleteFund fund.name db
-  ExceptT $ insertFund fund db
+retrieveFund :: String -> DB -> Aff (Either PG.PGError (Maybe Fund))
+retrieveFund fundName = do
+  flip runQuery \conn -> do
+    rows <- PG.query conn (PG.Query """
+      SELECT (investment, value) FROM investments
+      WHERE local_authority = $1;
+    """) (Row1 fundName)
+    case rows of
+      [] -> pure Nothing
+      fundRows -> do
+        pure $ Just {name: fundName, investments}
+        where investments = map (\(investment /\ value) -> {name: investment, value: value}) fundRows
 
 -----
 
