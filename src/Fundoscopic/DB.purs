@@ -67,7 +67,7 @@ retrieveFund :: String -> DB -> Aff (Either PG.PGError (Maybe Fund))
 retrieveFund fundName = do
   flip runQuery \conn -> do
     rows <- PG.query conn (PG.Query """
-      SELECT (investment, value) FROM investments
+      SELECT investment, value FROM investments
       WHERE local_authority = $1;
     """) (Row1 fundName)
     case rows of
