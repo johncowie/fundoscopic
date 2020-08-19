@@ -87,6 +87,11 @@ insertTag tag = do
       DO NOTHING;
     """) (tag.id /\ tag.name /\ tag.percentage /\ tag.creator)
 
+deleteAllTags :: DB -> Aff (Either PG.PGError Unit)
+deleteAllTags = do
+  flip runQuery \conn -> do
+    PG.execute conn (PG.Query "DELETE FROM tags;") Row0
+
 retrieveTags :: DB -> Aff (Either PG.PGError (Array Tag))
 retrieveTags = do
   flip runQuery \conn -> do

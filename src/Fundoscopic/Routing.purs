@@ -15,12 +15,18 @@ import HTTPure (Method(..))
 
 -- type Routes = BiMap HandlerId (Array String)
 
-data HandlerId = Home | Login | GoogleOAuthCallback | DownloadSpreadsheet | ShowFund String
+data HandlerId = Home
+               | Login
+               | GoogleOAuthCallback
+               | DownloadSpreadsheet
+               | ShowFund String
+               | AddTag
 
 handlerIdForPath :: Method -> Array String -> Maybe HandlerId
 handlerIdForPath Get ["login"] = Just Login
 handlerIdForPath Get ["google"] = Just GoogleOAuthCallback
 handlerIdForPath _ ["sheet"] = Just DownloadSpreadsheet -- FIXME restrict to Post
+handlerIdForPath _ ["tag"] = Just AddTag -- FIXME restrict to Post
 handlerIdForPath Get ["fund", fundName] = Just $ ShowFund fundName
 handlerIdForPath Get [] = Just Home
 handlerIdForPath _ _ = Nothing
@@ -29,6 +35,7 @@ routeForHandler :: HandlerId -> String
 routeForHandler Login = joinPath ["login"]
 routeForHandler GoogleOAuthCallback = joinPath ["google"]
 routeForHandler DownloadSpreadsheet  = joinPath ["sheet"]
+routeForHandler AddTag = joinPath ["tag"]
 routeForHandler (ShowFund fundName) = joinPath ["fund", fundName]
 routeForHandler Home = joinPath []
 

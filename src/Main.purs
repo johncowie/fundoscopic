@@ -84,6 +84,11 @@ lookupHandler deps = case _ of
                              wrapNotFound notFoundJson $
                              ErrM.wrapHandleError (serverError >>> jsonErrorResponse >>> map Just) $
                              H.showFund fundName deps.db
+    R.AddTag -> AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
+                QP.wrapParseQueryParams (map pure errorsResponse) $
+                JsonM.wrapJsonResponse $
+                ErrM.wrapHandleError (serverError >>> jsonErrorResponse) $
+                H.addTag deps.db
 
 app :: forall req res. (IsRequest req) => (Maybe R.HandlerId -> req Unit -> res) -> req Unit -> res
 app handlerLookup req = (handlerLookup handlerId) req

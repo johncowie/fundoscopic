@@ -1,9 +1,12 @@
 module Fundoscopic.Data.Tag
 ( Tag
-, tag )
+, mkTag )
 where
 
 import Data.String as Str
+import Data.String.Regex as Re
+import Data.String.Regex.Flags (global)
+import Data.String.Regex.Unsafe (unsafeRegex)
 import Fundoscopic.Prelude
 import Fundoscopic.Data.Percentage (Percentage)
 import Fundoscopic.Data.User (UserId)
@@ -15,11 +18,11 @@ type Tag = {id :: String, name :: String, percentage :: Maybe Percentage, creato
 -- replace continuous whitespace with dashes
 -- to lower string
 slugify :: String -> String
-slugify s = Str.toLower s
+slugify = Str.trim >>> Str.toLower >>> Re.replace (unsafeRegex "\\s+" global) "-"
 
 tagId :: String -> Maybe Percentage -> String
 tagId name pc = slugify name <> maybe "" (((<>)"-") <<< show) pc
 
-tag :: String -> Maybe Percentage -> UserId -> Tag
-tag name percentage creator = {id, name, percentage, creator}
+mkTag :: String -> Maybe Percentage -> UserId -> Tag
+mkTag name percentage creator = {id, name, percentage, creator}
   where id = tagId name percentage

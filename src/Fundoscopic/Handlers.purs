@@ -10,7 +10,8 @@ import Fundoscopic.DB as DB
 import Fundoscopic.Data.Percentage (Percentage)
 import Fundoscopic.Data.Fund as Fund
 import Fundoscopic.Data.User as User
-import Fundoscopic.Error (HttpError, toServerError, toUserError, serverError)
+import Fundoscopic.Data.Tag as Tag
+import Fundoscopic.Error (HttpError, toServerError, toUserError)
 import Fundoscopic.Google.Sheets as Sheets
 import Fundoscopic.Middleware.Auth (AuthedRequest, tokenPayload)
 import Fundoscopic.Routing as Routes
@@ -81,10 +82,17 @@ showFund fundName db _ = runExceptT do
   fundM <- ExceptT $ map (lmap show) $ DB.retrieveFund fundName db
   pure $ (response 200 <<< encodeJson) <$> fundM
 
-type NewTagQueryParams = { percentage :: Maybe Percentage }
+type NewTagQueryParams = { name :: String, percentage :: Maybe Percentage }
 
-addTag :: AuthedRequest {sub :: User.UserId} (NewTagQueryParams /\ Unit) -> Aff (Either String (Response Json))
-addTag req = pure $ Left "unimplemented"
+addTag :: DB
+       -> AuthedRequest {sub :: User.UserId} (NewTagQueryParams /\ Unit)
+       -> Aff (Either String (Response Json))
+addTag db req = runExceptT do
+  let tag = Tag.mkTag name percentage sub
+  ExceptT $ map (lmap show) $ DB.insertTag tag db
+  pure $ response 200 $ encodeJson {message: "Successfully inserted tag"}
+  where {sub} = tokenPayload req
+        ({name, percentage} /\ _) = L.view _val req
 
 googleOauthCallback :: DB -> OAuth -> JWT.JWTGenerator {sub :: User.UserId} -> BasicRequest ({code :: OAuthCode} /\ Unit) -> Aff (Either String (Response String))
 googleOauthCallback db oauth jwtGen req = runExceptT do
