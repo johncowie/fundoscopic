@@ -121,5 +121,4 @@ showSVS (SQLValueString s) = s
 class ShowSQLValue a where showSQLValue :: a -> SQLValueString
 
 instance showSQLValueString :: ShowSQLValue String where showSQLValue s = SQLValueString $ "\'" <> s <>  "\'"
-instance showSQLValueNumber :: ShowSQLValue Number where showSQLValue = SQLValueString <<< show
-instance showSQLValueInt :: ShowSQLValue Int where showSQLValue = SQLValueString <<< show
+else instance showSQLValueShow :: (Show a) => ShowSQLValue a where showSQLValue = SQLValueString <<< show
