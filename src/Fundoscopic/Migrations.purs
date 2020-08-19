@@ -77,6 +77,17 @@ createTagsTable id = {id, up, down, description}
         down = "DROP TABLE IF EXISTS tags;"
         description = "Create tags table"
 
+createTaggingsTable :: Int -> Migration Int String
+createTaggingsTable id = {id, up, down, description}
+  where up = """CREATE TABLE IF NOT EXISTS taggings (
+                  investment VARCHAR NOT NULL
+                , tag_id VARCHAR REFERENCES tags (id)
+                , creator INT REFERENCES users (id)
+                );
+             """
+        down = """DROP TABLE IF EXISTS taggings;"""
+        description = "Create taggings table"
+
 migrations :: Array (Migration Int String)
 migrations = [
   createOAuthUserTable 1
@@ -86,6 +97,7 @@ migrations = [
 , revert (createInvestmentsTable 3) 5
 , createInvestmentsTableV2 6
 , createTagsTable 7
+, createTaggingsTable 8
 ]
 
 migrationStore :: forall m. (Monad m) => MigrationStore m Int String
