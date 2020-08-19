@@ -13,6 +13,9 @@ import Database.PostgreSQL.PG as PG
 import Effect.Aff (Aff)
 import Effect.Exception (Error, error)
 import Fundoscopic.DB as DB
+import Fundoscopic.Data.Tag (tag)
+import Fundoscopic.Data.User (UserId, newUser)
+import Fundoscopic.Data.Percentage (unsafePercentage)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldNotEqual, fail)
 
@@ -47,6 +50,24 @@ main db =
 
           knownFundM <- pgExceptT $ DB.retrieveFund "MyFund" db
           knownFundM `shouldEqual` (Just fund)
+      it "can upsert and retrieve tags" do
+        failOnError $ runExceptT do
+          let user1 = newUser "Jafar" (wrap "123") (wrap "accessToken") (wrap "refreshToken")
+          let user2 = newUser "Iago" (wrap "234") (wrap "accessToken") (wrap "refreshToken")
+          userId1 <- pgExceptT $ DB.upsertUser user1 db
+          userId2 <- pgExceptT $ DB.upsertUser user2 db
+
+          let tag1 = tag "fossil fuels" Nothing userId1
+          let tag2 = tag "fossil fuels" (Just (unsafePercentage 50)) userId1
+          let tag3 = tag "coal" Nothing userId1
+          let tag4 = tag "Coal" Nothing userId2
+          pgExceptT $ DB.insertTag tag1 db
+          pgExceptT $ DB.insertTag tag2 db
+          pgExceptT $ DB.insertTag tag3 db
+          pgExceptT $ DB.insertTag tag4 db
+
+          tags <- pgExceptT $ DB.retrieveTags db
+          tags `shouldEqual` [tag3, tag1, tag2]
 
     -- describe "retrieving events" do
     --   it "can insert an event" do

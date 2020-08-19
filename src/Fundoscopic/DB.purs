@@ -4,6 +4,7 @@ import Data.String as Str
 import Fundoscopic.Prelude
 import Fundoscopic.Data.User (NewUser, UserId, User, newUser, withId)
 import Fundoscopic.Data.Fund (Investment, Fund)
+import Fundoscopic.Data.Tag (Tag)
 import JohnCowie.PostgreSQL (runQuery, DB)
 import Database.PostgreSQL.PG as PG
 import Database.PostgreSQL.Row (Row0(Row0), Row1(Row1))
@@ -75,6 +76,26 @@ retrieveFund fundName = do
       (fundRows :: Array (String /\ Number)) -> do
         pure $ Just {name: fundName, investments}
         where investments = map (\(investment /\ value) -> {name: investment, value: value}) fundRows
+
+insertTag :: Tag -> DB -> Aff (Either PG.PGError Unit)
+insertTag tag = do
+  flip runQuery \conn -> do
+    PG.execute conn (PG.Query """
+      INSERT INTO tags (id, name, percentage, creator)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT ON CONSTRAINT tags_pkey
+      DO NOTHING;
+    """) (tag.id /\ tag.name /\ tag.percentage /\ tag.creator)
+
+retrieveTags :: DB -> Aff (Either PG.PGError (Array Tag))
+retrieveTags = do
+  flip runQuery \conn -> do
+    rows <- PG.query conn (PG.Query """
+      SELECT id, name, percentage, creator
+      FROM tags
+      ORDER BY id ASC;
+    """) Row0
+    pure $ map (\(id /\ name /\ percentage /\ creator) -> {id, name, percentage, creator}) rows
 
 -----
 

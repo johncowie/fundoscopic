@@ -69,7 +69,8 @@ renameValueCol id = {id, up, down, description}
 createTagsTable :: Int -> Migration Int String
 createTagsTable id = {id, up, down, description}
   where up = """CREATE TABLE IF NOT EXISTS tags (
-                  name VARCHAR NOT NULL
+                  id VARCHAR PRIMARY KEY
+                , name VARCHAR NOT NULL
                 , percentage SMALLINT CHECK (percentage >= 0 AND percentage <= 100)
                 , creator INT REFERENCES users (id)
              );"""

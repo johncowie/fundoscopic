@@ -1,21 +1,40 @@
 module Fundoscopic.Data.Percentage
 ( Percentage
-, fromNumber
-, toNumber )
+, fromInt
+, toInt
+, unsafePercentage)
 where
 
 import Fundoscopic.Prelude
 import JohnCowie.HTTPure.QueryParams (class ParseQueryParam, parseQueryParam)
+import Database.PostgreSQL.Value (class FromSQLValue, fromSQLValue, class ToSQLValue, toSQLValue)
+import Effect.Exception.Unsafe (unsafeThrow)
 
-data Percentage = Percentage Number
+data Percentage = Percentage Int
+
+derive instance eqPercentage :: Eq Percentage 
+
+instance showPercentage :: Show Percentage where
+  show = toInt >>> show
 
 instance parseQueryParamPercentage :: ParseQueryParam Percentage where
-  parseQueryParam = parseQueryParam >=> fromNumber
+  parseQueryParam = parseQueryParam >=> fromInt
 
-fromNumber :: Number -> Either String Percentage
-fromNumber n
-  | n < 0.0 || n > 100.0 = Left $ "Percentage must be between 0 and 100, was " <> show n
+instance fromSQLValuePercentage :: FromSQLValue Percentage where
+  fromSQLValue = fromSQLValue >=> fromInt
+
+instance toSQLValuePercentage :: ToSQLValue Percentage where
+  toSQLValue = toInt >>> toSQLValue
+
+fromInt :: Int -> Either String Percentage
+fromInt n
+  | n < 0 || n > 100 = Left $ "Percentage must be between 0 and 100, was " <> show n
   | otherwise = Right $ Percentage n
 
-toNumber :: Percentage -> Number
-toNumber (Percentage n) = n
+toInt :: Percentage -> Int
+toInt (Percentage n) = n
+
+unsafePercentage :: Int -> Percentage
+unsafePercentage i = case fromInt i of
+  (Left err) -> unsafeThrow err
+  (Right pc) -> pc
