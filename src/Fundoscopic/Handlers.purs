@@ -94,7 +94,7 @@ addTag db req = runExceptT do
   where {sub} = tokenPayload req
         {name, percentage} = L.view _val req
 
-type NewTaggingQueryParams = {investmentId :: Fund.InvestmentId, tagId :: String}
+type NewTaggingQueryParams = {investmentId :: Fund.InvestmentId, tagId :: Tag.TagId}
 
 addTagging :: DB
            -> AuthedRequest {sub :: User.UserId} NewTaggingQueryParams

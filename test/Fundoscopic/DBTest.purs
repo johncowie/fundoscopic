@@ -76,7 +76,7 @@ main db =
           userId1 <- pgExceptT $ DB.upsertUser user1 db
           let tag1 = mkTag "coal" Nothing userId1
           pgExceptT $ DB.insertTag tag1 db
-          let tagging = mkTagging (mkInvestmentId "coaly-mccoalface") "coal" userId1
+          let tagging = mkTagging (mkInvestmentId "coaly-mccoalface") (wrap "coal") userId1
           pgExceptT $ DB.insertTagging tagging db
           pgExceptT $ DB.insertTagging tagging db -- can add again
           taggings <- pgExceptT $ DB.retrieveTaggings db
@@ -93,9 +93,9 @@ main db =
           pgExceptT $ DB.upsertFund fund db
           pgExceptT $ DB.insertTag (mkTag "coal" Nothing userId1) db
           pgExceptT $ DB.insertTag (mkTag "oil" Nothing userId1) db
-          pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "coke") "coal" userId1) db
-          pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "pepsi") "coal" userId1) db
-          pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "coke") "oil" userId1) db
+          pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "coke") (wrap "coal") userId1) db
+          pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "pepsi") (wrap "coal") userId1) db
+          pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "coke") (wrap "oil") userId1) db
           taggings <- pgExceptT $ DB.retrieveInvestmentTags db
           taggings `shouldEqual` [ mkInvestmentId "coke" /\ ["coal", "oil"]
                                  , mkInvestmentId "lilt" /\ []

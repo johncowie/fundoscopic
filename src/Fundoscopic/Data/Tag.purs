@@ -1,7 +1,9 @@
 module Fundoscopic.Data.Tag
 ( Tag
+, TagId
 , Tagging
 , mkTag
+, mkTagId
 , mkTagging)
 where
 
@@ -13,9 +15,10 @@ import Fundoscopic.Prelude
 import Fundoscopic.Data.Percentage (Percentage)
 import Fundoscopic.Data.User (UserId)
 import Fundoscopic.Data.Fund (InvestmentId)
+import Fundoscopic.Wrapper (Wrapper)
 
+type TagId = Wrapper "TagId" String
 type Tag = {id :: String, name :: String, percentage :: Maybe Percentage, creator :: UserId}
-
 
 slugify :: String -> String
 slugify = Str.trim >>> Str.toLower >>> Re.replace (unsafeRegex "\\s+" global) "-"
@@ -27,7 +30,7 @@ mkTag :: String -> Maybe Percentage -> UserId -> Tag
 mkTag name percentage creator = {id, name, percentage, creator}
   where id = mkTagId name percentage
 
-type Tagging = {investmentId :: InvestmentId, tagId :: String, creator :: UserId}
+type Tagging = {investmentId :: InvestmentId, tagId :: TagId, creator :: UserId}
 
-mkTagging :: InvestmentId -> String -> UserId -> Tagging
+mkTagging :: InvestmentId -> TagId -> UserId -> Tagging
 mkTagging investmentId tagId creator = {investmentId, tagId, creator}
