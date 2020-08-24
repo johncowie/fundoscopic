@@ -23,7 +23,7 @@ import Prelude
 
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), maybe, fromMaybe)
 import Data.List (List(..), (:))
 import Data.Traversable (class Traversable)
 import Data.Tuple (Tuple(..))

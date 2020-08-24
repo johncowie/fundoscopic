@@ -8,6 +8,7 @@ import Data.Argonaut.Encode (encodeJson)
 import Data.Either (note)
 import Fundoscopic.DB as DB
 import Fundoscopic.Data.Fund as Fund
+import Fundoscopic.Data.Paging (Limit, Offset)
 import Fundoscopic.Data.Percentage (Percentage)
 import Fundoscopic.Data.Tag as Tag
 import Fundoscopic.Data.User as User
@@ -106,15 +107,15 @@ addTagging db req = runExceptT do
   where {sub} = tokenPayload req
         {investmentId, tagId} = L.view _val req
 
-type ListTaggingsQueryParams = {tagId :: Maybe Tag.TagId}
+type ListTaggingsQueryParams = {tagId :: Maybe Tag.TagId, limit :: Limit, offset :: Offset}
 
 listTaggings :: DB
              -> AuthedRequest {sub :: User.UserId} ListTaggingsQueryParams
              -> Aff (Either String (Response Json))
 listTaggings db req = runExceptT do
-  taggings <- ExceptT $ map (lmap show) $ DB.retrieveInvestmentTags tagId db
+  taggings <- ExceptT $ map (lmap show) $ DB.retrieveInvestmentTags {limit, offset} tagId db
   pure $ response 200 $ encodeJson taggings
-  where {tagId} = L.view _val req
+  where {tagId, limit, offset} = L.view _val req
 
 googleOauthCallback :: DB
                     -> OAuth

@@ -2,11 +2,12 @@ module Fundoscopic.DB where
 
 import Data.String as Str
 import Data.Map as M
-import Data.Array (foldr, singleton, sort)
+import Data.Array (foldr, singleton, sort, head)
 import Fundoscopic.Prelude
 import Fundoscopic.Data.User (NewUser, UserId, User, newUser, withId)
 import Fundoscopic.Data.Fund (Investment, InvestmentId, Fund)
 import Fundoscopic.Data.Tag (Tag, Tagging, TagId)
+import Fundoscopic.Data.Paging (Paging)
 import JohnCowie.PostgreSQL (runQuery, DB)
 import Database.PostgreSQL.PG as PG
 import Database.PostgreSQL.Row (Row0(Row0), Row1(Row1))
@@ -121,8 +122,8 @@ addTagToInvestmentGroup (investmentId /\ tagId) = M.insertWith sortedConcat inve
 toTaggedInvestments :: Array (InvestmentId /\ Maybe String) -> Array (InvestmentId /\ Array String)
 toTaggedInvestments = foldr addTagToInvestmentGroup M.empty >>> M.toUnfoldable
 
-retrieveInvestmentTags :: Maybe TagId -> DB -> Aff (Either PG.PGError (Array (InvestmentId /\ Array String)))
-retrieveInvestmentTags tagIdM = do
+retrieveInvestmentTags :: Paging -> Maybe TagId -> DB -> Aff (Either PG.PGError (Array (InvestmentId /\ Array String)))
+retrieveInvestmentTags paging tagIdM = do
   flip runQuery \conn -> do
     toTaggedInvestments <$> PG.query conn (PG.Query """
       SELECT i.investment_id, t.tag_id
@@ -131,12 +132,23 @@ retrieveInvestmentTags tagIdM = do
         FROM investments ii
         LEFT JOIN taggings AS tt ON ii.investment_id = tt.investment_id
         WHERE ($1::varchar) IS NULL OR tt.tag_id = ($1::varchar)
+        LIMIT $2
+        OFFSET $3
         ) i
       LEFT JOIN taggings AS t ON i.investment_id = t.investment_id
       ;
-    """) (Row1 tagIdM) {-
-PAGING (should page inner investments query)
--}
+    """) (tagIdM /\ paging.limit /\ paging.offset)
+
+countInvestments :: Maybe TagId -> DB -> Aff (Either PG.PGError Int)
+countInvestments tagIdM = do
+  flip runQuery \conn -> do
+    rows <- PG.query conn (PG.Query """
+      SELECT (COUNT(DISTINCT(ii.investment_id))::integer)
+      FROM investments ii
+      LEFT JOIN taggings AS tt ON ii.investment_id = tt.investment_id
+      WHERE ($1::varchar) IS NULL OR tt.tag_id = ($1::varchar)
+    """) (Row1 tagIdM)
+    pure $ fromMaybe 0 $ head $ map (\(Row1 count) -> count) rows
 
 deleteAllTags :: DB -> Aff (Either PG.PGError Unit)
 deleteAllTags = do

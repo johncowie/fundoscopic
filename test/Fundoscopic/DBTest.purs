@@ -10,6 +10,7 @@ import Fundoscopic.Data.Fund (mkInvestment, mkInvestmentId)
 import Fundoscopic.Data.Tag (mkTag, mkTagging)
 import Fundoscopic.Data.User (newUser)
 import Fundoscopic.Data.Percentage (unsafePercentage)
+import Fundoscopic.Data.Paging (mkPaging)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
 
@@ -97,10 +98,14 @@ main db =
           pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "coke") (wrap "coal") userId1) db
           pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "pepsi") (wrap "coal") userId1) db
           pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "coke") (wrap "oil") userId1) db
-          taggings <- pgExceptT $ DB.retrieveInvestmentTags Nothing db
+          taggings <- pgExceptT $ DB.retrieveInvestmentTags (mkPaging 100 0) Nothing db
+          count <- pgExceptT $ DB.countInvestments Nothing db
           taggings `shouldEqual` [ mkInvestmentId "coke" /\ ["coal", "oil"]
                                  , mkInvestmentId "lilt" /\ []
                                  , mkInvestmentId "pepsi" /\ ["coal"]]
-          coalTaggings <- pgExceptT $ DB.retrieveInvestmentTags (Just (wrap "coal")) db
+          count `shouldEqual` 3
+          coalTaggings <- pgExceptT $ DB.retrieveInvestmentTags (mkPaging 100 0) (Just (wrap "coal")) db
+          coalCount <- pgExceptT $ DB.countInvestments (Just (wrap "coal")) db
           coalTaggings `shouldEqual` [ mkInvestmentId "coke" /\ ["coal", "oil"]
                                      , mkInvestmentId "pepsi" /\ ["coal"]]
+          coalCount `shouldEqual` 2
