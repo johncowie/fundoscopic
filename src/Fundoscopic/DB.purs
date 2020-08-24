@@ -6,7 +6,7 @@ import Data.Array (foldr, singleton, sort)
 import Fundoscopic.Prelude
 import Fundoscopic.Data.User (NewUser, UserId, User, newUser, withId)
 import Fundoscopic.Data.Fund (Investment, InvestmentId, Fund)
-import Fundoscopic.Data.Tag (Tag, Tagging)
+import Fundoscopic.Data.Tag (Tag, Tagging, TagId)
 import JohnCowie.PostgreSQL (runQuery, DB)
 import Database.PostgreSQL.PG as PG
 import Database.PostgreSQL.Row (Row0(Row0), Row1(Row1))
@@ -121,16 +121,20 @@ addTagToInvestmentGroup (investmentId /\ tagId) = M.insertWith sortedConcat inve
 toTaggedInvestments :: Array (InvestmentId /\ Maybe String) -> Array (InvestmentId /\ Array String)
 toTaggedInvestments = foldr addTagToInvestmentGroup M.empty >>> M.toUnfoldable
 
-retrieveInvestmentTags :: DB -> Aff (Either PG.PGError (Array (InvestmentId /\ Array String)))
-retrieveInvestmentTags = do
+retrieveInvestmentTags :: Maybe TagId -> DB -> Aff (Either PG.PGError (Array (InvestmentId /\ Array String)))
+retrieveInvestmentTags tagIdM = do
   flip runQuery \conn -> do
     toTaggedInvestments <$> PG.query conn (PG.Query """
       SELECT i.investment_id, t.tag_id
-      FROM investments i
+      FROM (
+        SELECT DISTINCT(ii.investment_id)
+        FROM investments ii
+        LEFT JOIN taggings AS tt ON ii.investment_id = tt.investment_id
+        WHERE ($1::varchar) IS NULL OR tt.tag_id = ($1::varchar)
+        ) i
       LEFT JOIN taggings AS t ON i.investment_id = t.investment_id
       ;
-    """) Row0
-{-
+    """) (Row1 tagIdM) {-
 PAGING (should page inner investments query)
 -}
 

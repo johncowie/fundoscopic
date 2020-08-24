@@ -52,6 +52,7 @@ main db =
 
       it "can upsert and retrieve tags" do
         failOnError $ runExceptT do
+          pgExceptT $ teardownTags db
           let user1 = newUser "Jafar" (wrap "123") (wrap "accessToken") (wrap "refreshToken")
           let user2 = newUser "Iago" (wrap "234") (wrap "accessToken") (wrap "refreshToken")
           userId1 <- pgExceptT $ DB.upsertUser user1 db
@@ -68,10 +69,10 @@ main db =
 
           tags <- pgExceptT $ DB.retrieveTags db
           tags `shouldEqual` [tag3, tag1, tag2]
-          pgExceptT $ teardownTags db
 
       it "can insert a tagging, for a given user, tag and investment" do
         failOnError $ runExceptT do
+          pgExceptT $ teardownTags db
           let user1 = newUser "Jafar" (wrap "123") (wrap "accessToken") (wrap "refreshToken")
           userId1 <- pgExceptT $ DB.upsertUser user1 db
           let tag1 = mkTag "coal" Nothing userId1
@@ -81,10 +82,10 @@ main db =
           pgExceptT $ DB.insertTagging tagging db -- can add again
           taggings <- pgExceptT $ DB.retrieveTaggings db
           taggings `shouldEqual` [tagging]
-          pgExceptT $ teardownTags db
 
       it "can retrieve investments with their tags" do
         failOnError $ runExceptT do
+          pgExceptT $ teardownTags db
           let user1 = newUser "Jafar" (wrap "123") (wrap "accessToken") (wrap "refreshToken")
           userId1 <- pgExceptT $ DB.upsertUser user1 db
           let fund = {name: "MyFund", investments: [ mkInvestment "Coke" 100.0
@@ -96,8 +97,10 @@ main db =
           pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "coke") (wrap "coal") userId1) db
           pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "pepsi") (wrap "coal") userId1) db
           pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "coke") (wrap "oil") userId1) db
-          taggings <- pgExceptT $ DB.retrieveInvestmentTags db
+          taggings <- pgExceptT $ DB.retrieveInvestmentTags Nothing db
           taggings `shouldEqual` [ mkInvestmentId "coke" /\ ["coal", "oil"]
                                  , mkInvestmentId "lilt" /\ []
                                  , mkInvestmentId "pepsi" /\ ["coal"]]
-          pgExceptT $ teardownTags db
+          coalTaggings <- pgExceptT $ DB.retrieveInvestmentTags (Just (wrap "coal")) db
+          coalTaggings `shouldEqual` [ mkInvestmentId "coke" /\ ["coal", "oil"]
+                                     , mkInvestmentId "pepsi" /\ ["coal"]]

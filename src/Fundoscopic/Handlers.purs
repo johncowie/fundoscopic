@@ -112,7 +112,7 @@ listTaggings :: DB
              -> AuthedRequest {sub :: User.UserId} ListTaggingsQueryParams
              -> Aff (Either String (Response Json))
 listTaggings db req = runExceptT do
-  taggings <- ExceptT $ map (lmap show) $ DB.retrieveInvestmentTags db
+  taggings <- ExceptT $ map (lmap show) $ DB.retrieveInvestmentTags Nothing db
   pure $ response 200 $ encodeJson taggings
 
 googleOauthCallback :: DB
