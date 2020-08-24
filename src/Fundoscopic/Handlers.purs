@@ -59,7 +59,7 @@ type SpreadsheetQueryParams = { spreadsheet_sheet_id :: String
 
 downloadSpreadsheet :: DB
                     -> GoogleConfig
-                    -> AuthedRequest {sub :: User.UserId} (SpreadsheetQueryParams /\ Unit)
+                    -> AuthedRequest {sub :: User.UserId} SpreadsheetQueryParams
                     -> Aff (Either HttpError (Response Json))
 downloadSpreadsheet db googleConfig authedRequest = runExceptT do
   userM <- toServerError $ ExceptT $ map (lmap show) $ DB.retrieveUser sub db
@@ -72,7 +72,7 @@ downloadSpreadsheet db googleConfig authedRequest = runExceptT do
   toServerError $ ExceptT $ map (lmap show) $ DB.upsertFund fund db
   pure $ response 200 $ encodeJson {message: "Successfully loaded sheet"}
   where {sub} = tokenPayload authedRequest
-        ({sheet_name, spreadsheet_sheet_id, fund_name} /\ _) = L.view _val authedRequest
+        {sheet_name, spreadsheet_sheet_id, fund_name} = L.view _val authedRequest
 
 showFund :: String
          -> DB
@@ -85,16 +85,32 @@ showFund fundName db _ = runExceptT do
 type NewTagQueryParams = { name :: String, percentage :: Maybe Percentage }
 
 addTag :: DB
-       -> AuthedRequest {sub :: User.UserId} (NewTagQueryParams /\ Unit)
+       -> AuthedRequest {sub :: User.UserId} NewTagQueryParams
        -> Aff (Either String (Response Json))
 addTag db req = runExceptT do
   let tag = Tag.mkTag name percentage sub
   ExceptT $ map (lmap show) $ DB.insertTag tag db
   pure $ response 200 $ encodeJson {message: "Successfully inserted tag"}
   where {sub} = tokenPayload req
-        ({name, percentage} /\ _) = L.view _val req
+        {name, percentage} = L.view _val req
 
-googleOauthCallback :: DB -> OAuth -> JWT.JWTGenerator {sub :: User.UserId} -> BasicRequest ({code :: OAuthCode} /\ Unit) -> Aff (Either String (Response String))
+type NewTaggingQueryParams = {investmentId :: Fund.InvestmentId, tagId :: String}
+
+addTagging :: DB
+           -> AuthedRequest {sub :: User.UserId} NewTaggingQueryParams
+           -> Aff (Either String (Response Json))
+addTagging db req = runExceptT do
+  let tagging = Tag.mkTagging investmentId tagId sub
+  ExceptT $ map (lmap show) $ DB.insertTagging tagging db
+  pure $ response 200 $ encodeJson {message: "Successfully inserted tagging"}
+  where {sub} = tokenPayload req
+        {investmentId, tagId} = L.view _val req
+
+googleOauthCallback :: DB
+                    -> OAuth
+                    -> JWT.JWTGenerator {sub :: User.UserId}
+                    -> BasicRequest {code :: OAuthCode}
+                    -> Aff (Either String (Response String))
 googleOauthCallback db oauth jwtGen req = runExceptT do
   userData <- ExceptT $ oauth.handleCode code
   -- FIXME google should return accessToken
@@ -103,4 +119,4 @@ googleOauthCallback db oauth jwtGen req = runExceptT do
   (token :: JWT.JWT) <- ExceptT $ liftEffect $ map Right $ jwtGen.generate {sub: userId}
   let cookie = Cookie.new "accesstoken" (unwrap token) # Cookie.setHttpOnly -- # Cookie.setSecure FIXME do his
   pure $ setCookie cookie $ redirect (Routes.routeForHandler Routes.Home)
-  where ({code} /\ _) = L.view _val req
+  where {code} = L.view _val req

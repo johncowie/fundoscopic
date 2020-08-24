@@ -9,6 +9,7 @@ import Data.Newtype (class Newtype, unwrap, wrap)
 import Database.PostgreSQL.Value (class ToSQLValue, toSQLValue, class FromSQLValue, fromSQLValue)
 import Data.Argonaut.Encode (class EncodeJson, encodeJson)
 import Data.Argonaut.Decode (class DecodeJson, decodeJson)
+import JohnCowie.HTTPure.QueryParams (class ParseQueryParam, parseQueryParam)
 
 data Wrapper (sym :: Symbol) v = Wrapper v
 
@@ -28,11 +29,14 @@ instance encodeJsonWrapper :: EncodeJson v => EncodeJson (Wrapper typ v) where
 instance decodeJsonWrapper :: DecodeJson v => DecodeJson (Wrapper typ v) where
   decodeJson = decodeJson >>> map wrap
 
-instance toSQLValue :: ToSQLValue v => ToSQLValue (Wrapper typ v) where
+instance toSQLValueWrapper :: ToSQLValue v => ToSQLValue (Wrapper typ v) where
   toSQLValue = unwrap >>> toSQLValue
 
-instance fromSQLValue :: FromSQLValue v => FromSQLValue (Wrapper typ v) where
+instance fromSQLValueWrapper :: FromSQLValue v => FromSQLValue (Wrapper typ v) where
   fromSQLValue = fromSQLValue >>> map wrap
+
+instance parseQueryParamWrapper :: (ParseQueryParam v) => ParseQueryParam (Wrapper typ v) where
+  parseQueryParam = parseQueryParam >>> map wrap
 
 rewrap :: forall a b v. (Newtype a v) => (Newtype b v) => a -> b
 rewrap = unwrap >>> wrap
