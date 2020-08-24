@@ -1,9 +1,11 @@
 module Fundoscopic.DB where
 
 import Data.String as Str
+import Data.Map as M
+import Data.Array (foldr, singleton, sort)
 import Fundoscopic.Prelude
 import Fundoscopic.Data.User (NewUser, UserId, User, newUser, withId)
-import Fundoscopic.Data.Fund (Investment, Fund)
+import Fundoscopic.Data.Fund (Investment, InvestmentId, Fund)
 import Fundoscopic.Data.Tag (Tag, Tagging)
 import JohnCowie.PostgreSQL (runQuery, DB)
 import Database.PostgreSQL.PG as PG
@@ -112,6 +114,25 @@ retrieveTaggings = do
     """) Row0
     pure $ map (\(investmentId /\ tagId /\ creator) -> {investmentId, tagId, creator}) rows
 
+addTagToInvestmentGroup :: (InvestmentId /\ Maybe String) -> M.Map InvestmentId (Array String) -> M.Map InvestmentId (Array String)
+addTagToInvestmentGroup (investmentId /\ tagId) = M.insertWith sortedConcat investmentId (maybe [] singleton tagId)
+  where sortedConcat a b = sort (a <> b)
+
+toTaggedInvestments :: Array (InvestmentId /\ Maybe String) -> Array (InvestmentId /\ Array String)
+toTaggedInvestments = foldr addTagToInvestmentGroup M.empty >>> M.toUnfoldable
+
+retrieveInvestmentTags :: DB -> Aff (Either PG.PGError (Array (InvestmentId /\ Array String)))
+retrieveInvestmentTags = do
+  flip runQuery \conn -> do
+    toTaggedInvestments <$> PG.query conn (PG.Query """
+      SELECT i.investment_id, t.tag_id
+      FROM investments i
+      LEFT JOIN taggings AS t ON i.investment_id = t.investment_id
+      ;
+    """) Row0
+{-
+PAGING (should page inner investments query)
+-}
 
 deleteAllTags :: DB -> Aff (Either PG.PGError Unit)
 deleteAllTags = do

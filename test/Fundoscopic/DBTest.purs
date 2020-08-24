@@ -1,16 +1,10 @@
 module Fundoscopic.DBTest where
 
-import Prelude
 import Control.Monad.Error.Class (class MonadThrow)
-import Control.Monad.Except.Trans (ExceptT(..), runExceptT)
-import Data.Bifunctor (lmap)
-import Data.Newtype (wrap)
-import Data.Maybe (Maybe(..))
-import Data.Either (Either(..))
 import JohnCowie.PostgreSQL (DB)
 import Database.PostgreSQL.PG as PG
-import Effect.Aff (Aff)
 import Effect.Exception (Error, error)
+import Fundoscopic.Prelude
 import Fundoscopic.DB as DB
 import Fundoscopic.Data.Fund (mkInvestment, mkInvestmentId)
 import Fundoscopic.Data.Tag (mkTag, mkTagging)
@@ -50,11 +44,11 @@ main db =
         failOnError $ runExceptT do
           let fund = {name: "MyFund", investments: [mkInvestment "Coke" 100.0]}
           pgExceptT $ DB.upsertFund fund db
-          -- unknownFundM <- pgExceptT $ DB.retrieveFund "UnknownFund" db
-          -- unknownFundM `shouldEqual` Nothing
-          --
-          -- knownFundM <- pgExceptT $ DB.retrieveFund "MyFund" db
-          -- knownFundM `shouldEqual` (Just fund)
+          unknownFundM <- pgExceptT $ DB.retrieveFund "UnknownFund" db
+          unknownFundM `shouldEqual` Nothing
+
+          knownFundM <- pgExceptT $ DB.retrieveFund "MyFund" db
+          knownFundM `shouldEqual` (Just fund)
 
       it "can upsert and retrieve tags" do
         failOnError $ runExceptT do
@@ -87,4 +81,23 @@ main db =
           pgExceptT $ DB.insertTagging tagging db -- can add again
           taggings <- pgExceptT $ DB.retrieveTaggings db
           taggings `shouldEqual` [tagging]
+          pgExceptT $ teardownTags db
+
+      it "can retrieve investments with their tags" do
+        failOnError $ runExceptT do
+          let user1 = newUser "Jafar" (wrap "123") (wrap "accessToken") (wrap "refreshToken")
+          userId1 <- pgExceptT $ DB.upsertUser user1 db
+          let fund = {name: "MyFund", investments: [ mkInvestment "Coke" 100.0
+                                                   , mkInvestment "Pepsi" 200.0
+                                                   , mkInvestment "Lilt" 300.0 ]}
+          pgExceptT $ DB.upsertFund fund db
+          pgExceptT $ DB.insertTag (mkTag "coal" Nothing userId1) db
+          pgExceptT $ DB.insertTag (mkTag "oil" Nothing userId1) db
+          pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "coke") "coal" userId1) db
+          pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "pepsi") "coal" userId1) db
+          pgExceptT $ DB.insertTagging (mkTagging (mkInvestmentId "coke") "oil" userId1) db
+          taggings <- pgExceptT $ DB.retrieveInvestmentTags db
+          taggings `shouldEqual` [ mkInvestmentId "coke" /\ ["coal", "oil"]
+                                 , mkInvestmentId "lilt" /\ []
+                                 , mkInvestmentId "pepsi" /\ ["coal"]]
           pgExceptT $ teardownTags db

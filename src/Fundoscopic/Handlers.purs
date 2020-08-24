@@ -3,14 +3,14 @@ module Fundoscopic.Handlers where
 import Fundoscopic.Prelude
 
 import Biscotti.Cookie as Cookie
-import Data.Either (note)
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Encode (encodeJson)
+import Data.Either (note)
 import Fundoscopic.DB as DB
-import Fundoscopic.Data.Percentage (Percentage)
 import Fundoscopic.Data.Fund as Fund
-import Fundoscopic.Data.User as User
+import Fundoscopic.Data.Percentage (Percentage)
 import Fundoscopic.Data.Tag as Tag
+import Fundoscopic.Data.User as User
 import Fundoscopic.Error (HttpError, toServerError, toUserError)
 import Fundoscopic.Google.Sheets as Sheets
 import Fundoscopic.Middleware.Auth (AuthedRequest, tokenPayload)
@@ -112,7 +112,7 @@ listTaggings :: DB
              -> AuthedRequest {sub :: User.UserId} ListTaggingsQueryParams
              -> Aff (Either String (Response Json))
 listTaggings db req = runExceptT do
-  taggings <- ExceptT $ map (lmap show) $ DB.retrieveTaggings db
+  taggings <- ExceptT $ map (lmap show) $ DB.retrieveInvestmentTags db
   pure $ response 200 $ encodeJson taggings
 
 googleOauthCallback :: DB
