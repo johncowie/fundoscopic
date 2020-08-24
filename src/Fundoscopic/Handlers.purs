@@ -107,15 +107,17 @@ addTagging db req = runExceptT do
   where {sub} = tokenPayload req
         {investmentId, tagId} = L.view _val req
 
-type ListTaggingsQueryParams = {tagId :: Maybe Tag.TagId, limit :: Limit, offset :: Offset}
+type ListTaggingsQueryParams = {tagId :: Maybe Tag.TagId, limit :: Maybe Limit, offset :: Maybe Offset}
 
 listTaggings :: DB
              -> AuthedRequest {sub :: User.UserId} ListTaggingsQueryParams
              -> Aff (Either String (Response Json))
 listTaggings db req = runExceptT do
-  taggings <- ExceptT $ map (lmap show) $ DB.retrieveInvestmentTags {limit, offset} tagId db
+  taggings <- ExceptT $ map (lmap show) $ DB.retrieveInvestmentTags paging tagId db
   pure $ response 200 $ encodeJson taggings
   where {tagId, limit, offset} = L.view _val req
+        paging = { limit: fromMaybe (wrap 100) limit
+                 , offset: fromMaybe (wrap 0) offset}
 
 googleOauthCallback :: DB
                     -> OAuth
