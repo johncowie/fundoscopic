@@ -1,6 +1,8 @@
 module Fundoscopic.Data.Fund where
 
 import Fundoscopic.Prelude
+import Fundoscopic.Data.Slug (slugify)
+import Fundoscopic.Wrapper (Wrapper)
 import Data.String as Str
 import Data.List (elemIndex, filter, fromFoldable, (!!), toUnfoldable)
 import Data.Foldable (all)
@@ -10,10 +12,13 @@ import Data.Traversable (sequence, for)
 
 type Investment = {
   name :: String
+, investmentId :: InvestmentId
 , value :: Number
 }
 
 type Fund = {name :: String, investments :: Array Investment}
+
+type InvestmentId = Wrapper "InvestmentId" String
 
 headerPosition :: String -> List String -> Either String Int
 headerPosition header = map Str.toLower >>> elemIndex (Str.toLower header) >>> note ("No column with header " <> header)
@@ -57,7 +62,14 @@ readInvestment :: Tuple String String -> Either String Investment
 readInvestment (Tuple investmentNameStr valueStr) = do
   name <- nonEmptyString investmentNameStr
   value <- readNumber valueStr
-  pure {name, value}
+  pure $ mkInvestment name value
+
+mkInvestmentId :: String -> InvestmentId
+mkInvestmentId = slugify >>> wrap
+
+mkInvestment :: String -> Number -> Investment
+mkInvestment name value = {name, value, investmentId}
+  where investmentId = mkInvestmentId name
 
 readInvestments' :: List (List String) -> Either String (List Investment)
 readInvestments' = removeBlankRows >>> toColumns >=> (map readInvestment >>> sequence) >=> notEmpty

@@ -7,11 +7,13 @@ import Data.Bifunctor (lmap)
 import Data.Newtype (wrap)
 import Data.Maybe (Maybe(..))
 import Data.Either (Either(..))
+import JohnCowie.PostgreSQL (DB)
 import Database.PostgreSQL.PG as PG
 import Effect.Aff (Aff)
 import Effect.Exception (Error, error)
 import Fundoscopic.DB as DB
-import Fundoscopic.Data.Tag (mkTag)
+import Fundoscopic.Data.Fund (mkInvestment, mkInvestmentId)
+import Fundoscopic.Data.Tag (mkTag, mkTagging)
 import Fundoscopic.Data.User (newUser)
 import Fundoscopic.Data.Percentage (unsafePercentage)
 import Test.Spec (Spec, describe, it)
@@ -35,22 +37,27 @@ convertPGError = lmap (show >>> error)
 pgExceptT :: forall a. Aff (Either PG.PGError a) -> ExceptT Error Aff a
 pgExceptT = map convertPGError >>> ExceptT
 
+teardownTags :: DB -> Aff (Either PG.PGError Unit)
+teardownTags db = runExceptT do
+  ExceptT $ DB.deleteAllTaggings db
+  ExceptT $ DB.deleteAllTags db
+
 main :: PG.Pool -> Spec Unit
 main db =
   describe "db" do
     describe "upserting funds" $ do
       it "can upsert and retrieve a fund" $ do
         failOnError $ runExceptT do
-          let fund = {name: "MyFund", investments: [{name: "Coke", value: 100.0}]}
+          let fund = {name: "MyFund", investments: [mkInvestment "Coke" 100.0]}
           pgExceptT $ DB.upsertFund fund db
-          unknownFundM <- pgExceptT $ DB.retrieveFund "UnknownFund" db
-          unknownFundM `shouldEqual` Nothing
+          -- unknownFundM <- pgExceptT $ DB.retrieveFund "UnknownFund" db
+          -- unknownFundM `shouldEqual` Nothing
+          --
+          -- knownFundM <- pgExceptT $ DB.retrieveFund "MyFund" db
+          -- knownFundM `shouldEqual` (Just fund)
 
-          knownFundM <- pgExceptT $ DB.retrieveFund "MyFund" db
-          knownFundM `shouldEqual` (Just fund)
       it "can upsert and retrieve tags" do
         failOnError $ runExceptT do
-          pgExceptT $ DB.deleteAllTags db
           let user1 = newUser "Jafar" (wrap "123") (wrap "accessToken") (wrap "refreshToken")
           let user2 = newUser "Iago" (wrap "234") (wrap "accessToken") (wrap "refreshToken")
           userId1 <- pgExceptT $ DB.upsertUser user1 db
@@ -67,3 +74,17 @@ main db =
 
           tags <- pgExceptT $ DB.retrieveTags db
           tags `shouldEqual` [tag3, tag1, tag2]
+          pgExceptT $ teardownTags db
+
+      it "can insert a tagging, for a given user, tag and investment" do
+        failOnError $ runExceptT do
+          let user1 = newUser "Jafar" (wrap "123") (wrap "accessToken") (wrap "refreshToken")
+          userId1 <- pgExceptT $ DB.upsertUser user1 db
+          let tag1 = mkTag "coal" Nothing userId1
+          pgExceptT $ DB.insertTag tag1 db
+          let tagging = mkTagging (mkInvestmentId "coaly-mccoalface") "coal" userId1
+          pgExceptT $ DB.insertTagging tagging db
+          pgExceptT $ DB.insertTagging tagging db -- can add again
+          taggings <- pgExceptT $ DB.retrieveTaggings db
+          taggings `shouldEqual` [tagging]
+          pgExceptT $ teardownTags db

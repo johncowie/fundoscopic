@@ -1,7 +1,7 @@
 module Fundoscopic.Migrations where
 
 import Fundoscopic.Prelude
-import JohnCowie.Migrations (MigrationStore, Migration, Migrator, migrate, revert)
+import JohnCowie.Migrations (MigrationStore, Migration, Migrator, migrate, revert, rollback)
 import JohnCowie.PostgreSQL (dbComponent, DB)
 import JohnCowie.PostgreSQL.Migrations (executor, intVersionStore)
 
@@ -83,10 +83,25 @@ createTaggingsTable id = {id, up, down, description}
                   investment VARCHAR NOT NULL
                 , tag_id VARCHAR REFERENCES tags (id)
                 , creator INT REFERENCES users (id)
+                , CONSTRAINT unique_tagging UNIQUE(investment, tag_id)
                 );
              """
         down = """DROP TABLE IF EXISTS taggings;"""
         description = "Create taggings table"
+
+addInvestmentIdColumn :: Int -> Migration Int String
+addInvestmentIdColumn id = {id, up, down, description}
+  where up = """ALTER TABLE investments
+                ADD COLUMN investment_id VARCHAR;"""
+        down = """ALTER TABLE investments
+                  DROP COLUMN investment_id;"""
+        description = "Add investment_id column to investments;"
+
+renameTaggingsInvestmentCol :: Int -> Migration Int String
+renameTaggingsInvestmentCol id = {id, up, down, description}
+  where up = "ALTER TABLE taggings RENAME COLUMN investment TO investment_id;"
+        down = "ALTER TABLE taggings RENAME COLUMN investment_id TO investment;"
+        description = "Rename taggings investment column to investment_id"
 
 migrations :: Array (Migration Int String)
 migrations = [
@@ -98,6 +113,8 @@ migrations = [
 , createInvestmentsTableV2 6
 , createTagsTable 7
 , createTaggingsTable 8
+, addInvestmentIdColumn 9
+, renameTaggingsInvestmentCol 10
 ]
 
 migrationStore :: forall m. (Monad m) => MigrationStore m Int String
@@ -123,4 +140,4 @@ main = launchAff_ $ logError $ runExceptT do
     dbE: dbComponent "postgres://localhost:5432/fundoscopic"
   }
   db <- ExceptT $ liftEffect dbE
-  ExceptT $ migrate $ migrator db
+  ExceptT $ rollback $ migrator db
