@@ -94,6 +94,11 @@ lookupHandler deps = case _ of
                     JsonM.wrapJsonResponse $
                     ErrM.wrapHandleError (serverError >>> jsonErrorResponse) $
                     H.addTagging deps.db
+    R.ListTaggings -> AuthM.wrapTokenAuth deps.jwt.verifyAndExtract (const $ pure loginRedirect) $
+                      QP.wrapParseQueryParams (map pure errorsResponse) $
+                      JsonM.wrapJsonResponse $
+                      ErrM.wrapHandleError (serverError >>> jsonErrorResponse) $
+                      H.listTaggings deps.db
 
 app :: forall req res. (IsRequest req) => (Maybe R.HandlerId -> req Unit -> res) -> req Unit -> res
 app handlerLookup req = (handlerLookup handlerId) req

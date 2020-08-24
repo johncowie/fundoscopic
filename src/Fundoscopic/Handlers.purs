@@ -106,6 +106,15 @@ addTagging db req = runExceptT do
   where {sub} = tokenPayload req
         {investmentId, tagId} = L.view _val req
 
+type ListTaggingsQueryParams = {}
+
+listTaggings :: DB
+             -> AuthedRequest {sub :: User.UserId} ListTaggingsQueryParams
+             -> Aff (Either String (Response Json))
+listTaggings db req = runExceptT do
+  taggings <- ExceptT $ map (lmap show) $ DB.retrieveTaggings db
+  pure $ response 200 $ encodeJson taggings
+
 googleOauthCallback :: DB
                     -> OAuth
                     -> JWT.JWTGenerator {sub :: User.UserId}

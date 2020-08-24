@@ -22,13 +22,15 @@ data HandlerId = Home
                | ShowFund String
                | AddTag
                | AddTagging
+               | ListTaggings
 
 handlerIdForPath :: Method -> Array String -> Maybe HandlerId
 handlerIdForPath Get ["login"] = Just Login
 handlerIdForPath Get ["google"] = Just GoogleOAuthCallback
 handlerIdForPath _ ["sheet"] = Just DownloadSpreadsheet -- FIXME restrict to Post
 handlerIdForPath _ ["tag"] = Just AddTag -- FIXME restrict to Post
-handlerIdForPath _ ["tagging"] = Just AddTagging
+handlerIdForPath Post ["tagging"] = Just AddTagging
+handlerIdForPath Get ["tagging"] = Just ListTaggings
 handlerIdForPath Get ["fund", fundName] = Just $ ShowFund fundName
 handlerIdForPath Get [] = Just Home
 handlerIdForPath _ _ = Nothing
@@ -39,6 +41,7 @@ routeForHandler GoogleOAuthCallback = joinPath ["google"]
 routeForHandler DownloadSpreadsheet  = joinPath ["sheet"]
 routeForHandler AddTag = joinPath ["tag"]
 routeForHandler AddTagging = joinPath ["tagging"]
+routeForHandler ListTaggings = joinPath ["tagging"]
 routeForHandler (ShowFund fundName) = joinPath ["fund", fundName]
 routeForHandler Home = joinPath []
 
