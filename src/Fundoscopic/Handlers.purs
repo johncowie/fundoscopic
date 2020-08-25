@@ -19,6 +19,7 @@ import Fundoscopic.Routing as Routes
 import Fundoscopic.Wrapper (rewrap)
 import JohnCowie.Data.Lens as L
 import JohnCowie.HTTPure (BasicRequest, Response, _val, redirect, response, setContentType, setCookie)
+import JohnCowie.HTTPure.QueryParams (encodeQueryString)
 import JohnCowie.JWT as JWT
 import JohnCowie.OAuth (OAuth, OAuthCode)
 import JohnCowie.OAuth.Google (GoogleConfig)
@@ -28,6 +29,7 @@ import Text.Smolder.HTML as H
 import Text.Smolder.HTML.Attributes as A
 import Text.Smolder.Markup (text, (!))
 import Text.Smolder.Renderer.String (render)
+import Record as Record
 
 htmlResponse :: forall e. Int -> Html e -> Response String
 htmlResponse status = render >>> response status >>> setContentType "text/html"
@@ -109,13 +111,29 @@ addTagging db req = runExceptT do
 
 type ListTaggingsQueryParams = {tagId :: Maybe Tag.TagId, limit :: Maybe Limit, offset :: Maybe Offset}
 
+constructLinks :: Routes.HandlerId
+               -> ListTaggingsQueryParams
+               -> {limit :: Limit, offset :: Offset}
+               -> Int
+               -> {next :: Maybe String}
+constructLinks handlerId query {limit, offset} itemCount =
+  if remainingItems <= 0
+    then {next: Nothing}
+    else {next: Just $ path <> queryStr}
+  where queryStr = encodeQueryString true $ Record.merge updatedPaging query
+        remainingItems = itemCount - (unwrap limit + unwrap offset)
+        updatedPaging = {limit: limit, offset: offset + rewrap limit}
+        path = Routes.routeForHandler handlerId
+
 listTaggings :: DB
              -> AuthedRequest {sub :: User.UserId} ListTaggingsQueryParams
              -> Aff (Either String (Response Json))
 listTaggings db req = runExceptT do
   taggings <- ExceptT $ map (lmap show) $ DB.retrieveInvestmentTags paging tagId db
-  pure $ response 200 $ encodeJson taggings
-  where {tagId, limit, offset} = L.view _val req
+  count <- ExceptT $ map (lmap show) $ DB.countInvestments tagId db
+  let links = constructLinks Routes.ListTaggings query paging count
+  pure $ response 200 $ encodeJson {data: taggings, links}
+  where query@{tagId, limit, offset} = L.view _val req
         paging = { limit: fromMaybe (wrap 100) limit
                  , offset: fromMaybe (wrap 0) offset}
 
