@@ -85,6 +85,13 @@ retrieveFund fundName = do
         pure $ Just {name: fundName, investments}
         where investments = map (\(investment /\ investment_id /\ value) -> {name: investment, investmentId: investment_id, value}) fundRows
 
+deleteAllInvestments :: DB -> Aff (Either PG.PGError Unit)
+deleteAllInvestments = do
+  flip runQuery \conn -> do
+    PG.execute conn (PG.Query """
+        DELETE FROM investments;
+    """) (Row0)
+
 insertTag :: Tag -> DB -> Aff (Either PG.PGError Unit)
 insertTag tag = do
   flip runQuery \conn -> do

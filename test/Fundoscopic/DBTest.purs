@@ -32,10 +32,11 @@ convertPGError = lmap (show >>> error)
 pgExceptT :: forall a. Aff (Either PG.PGError a) -> ExceptT Error Aff a
 pgExceptT = map convertPGError >>> ExceptT
 
-teardownTags :: DB -> Aff (Either PG.PGError Unit)
-teardownTags db = runExceptT do
+teardownData :: DB -> Aff (Either PG.PGError Unit)
+teardownData db = runExceptT do
   ExceptT $ DB.deleteAllTaggings db
   ExceptT $ DB.deleteAllTags db
+  ExceptT $ DB.deleteAllInvestments db
 
 main :: PG.Pool -> Spec Unit
 main db =
@@ -43,6 +44,7 @@ main db =
     describe "upserting funds" $ do
       it "can upsert and retrieve a fund" $ do
         failOnError $ runExceptT do
+          pgExceptT $ teardownData db
           let fund = {name: "MyFund", investments: [mkInvestment "Coke" 100.0]}
           pgExceptT $ DB.upsertFund fund db
           unknownFundM <- pgExceptT $ DB.retrieveFund "UnknownFund" db
@@ -53,7 +55,7 @@ main db =
 
       it "can upsert and retrieve tags" do
         failOnError $ runExceptT do
-          pgExceptT $ teardownTags db
+          pgExceptT $ teardownData db
           let user1 = newUser "Jafar" (wrap "123") (wrap "accessToken") (wrap "refreshToken")
           let user2 = newUser "Iago" (wrap "234") (wrap "accessToken") (wrap "refreshToken")
           userId1 <- pgExceptT $ DB.upsertUser user1 db
@@ -73,7 +75,7 @@ main db =
 
       it "can insert a tagging, for a given user, tag and investment" do
         failOnError $ runExceptT do
-          pgExceptT $ teardownTags db
+          pgExceptT $ teardownData db
           let user1 = newUser "Jafar" (wrap "123") (wrap "accessToken") (wrap "refreshToken")
           userId1 <- pgExceptT $ DB.upsertUser user1 db
           let tag1 = mkTag "coal" Nothing userId1
@@ -86,7 +88,11 @@ main db =
 
       it "can retrieve investments with their tags" do
         failOnError $ runExceptT do
-          pgExceptT $ teardownTags db
+          pgExceptT $ teardownData db
+          originalTaggings <- pgExceptT $ DB.retrieveInvestmentTags (mkPaging 100 0) Nothing db
+          originalCount <- pgExceptT $ DB.countInvestments Nothing db
+          originalTaggings `shouldEqual` []
+          originalCount `shouldEqual` 0
           let user1 = newUser "Jafar" (wrap "123") (wrap "accessToken") (wrap "refreshToken")
           userId1 <- pgExceptT $ DB.upsertUser user1 db
           let fund = {name: "MyFund", investments: [ mkInvestment "Coke" 100.0

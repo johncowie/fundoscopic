@@ -111,15 +111,15 @@ addTagging db req = runExceptT do
 
 type ListTaggingsQueryParams = {tagId :: Maybe Tag.TagId, limit :: Maybe Limit, offset :: Maybe Offset}
 
-constructLinks :: Routes.HandlerId
+constructNextUrl :: Routes.HandlerId
                -> ListTaggingsQueryParams
                -> {limit :: Limit, offset :: Offset}
                -> Int
-               -> {next :: Maybe String}
-constructLinks handlerId query {limit, offset} itemCount =
+               -> Maybe String
+constructNextUrl handlerId query {limit, offset} itemCount =
   if remainingItems <= 0
-    then {next: Nothing}
-    else {next: Just $ path <> queryStr}
+    then Nothing
+    else Just $ path <> queryStr
   where queryStr = encodeQueryString true $ Record.merge updatedPaging query
         remainingItems = itemCount - (unwrap limit + unwrap offset)
         updatedPaging = {limit: limit, offset: offset + rewrap limit}
@@ -131,11 +131,12 @@ listTaggings :: DB
 listTaggings db req = runExceptT do
   taggings <- ExceptT $ map (lmap show) $ DB.retrieveInvestmentTags paging tagId db
   count <- ExceptT $ map (lmap show) $ DB.countInvestments tagId db
-  let links = constructLinks Routes.ListTaggings query paging count
-  pure $ response 200 $ encodeJson {data: taggings, links}
+  let next = constructNextUrl Routes.ListTaggings query paging count
+  pure $ response 200 $ encodeJson {data: map taggingRecord taggings, links: {next, count}}
   where query@{tagId, limit, offset} = L.view _val req
         paging = { limit: fromMaybe (wrap 100) limit
                  , offset: fromMaybe (wrap 0) offset}
+        taggingRecord (Tuple investment tags) = {investment, tags}
 
 googleOauthCallback :: DB
                     -> OAuth
